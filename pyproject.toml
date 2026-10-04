@@ -34,6 +34,13 @@ relate-anything = [
     "opencv-python>=4.10,<5",
     "Pillow>=10.0",
 ]
+# 可视化示例（examples/run_camera_visual.py）：OpenCV 的 cv2.putText 无法渲染中文，
+# 右下角中文上下文面板需要 Pillow + 系统中文字体绘制。缺失时示例降级为 ASCII 面板，
+# 检测框仍正常绘制，不崩溃。
+viz = [
+    "opencv-python>=4.10,<5",
+    "Pillow>=10.0",
+]
 
 [project.scripts]
 avc = "agent_visual_context.cli:main"

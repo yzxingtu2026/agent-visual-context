@@ -139,6 +139,11 @@ cli / api  ->  runtime  ->  context / policies / temporal  ->  perception / inpu
 - **健康查询**：`api/queries.py::VisualContextApi.from_live_runtime()` 暴露 `get_health()`（组件+整体状态）
   与 `get_metrics()`，是宿主链路判断视觉是否可用的唯一口径；视觉降级时宿主读到 `degraded` 即可跳过视觉增强，
   无需等待或阻塞。所有输出仍是视觉辅助观察，不触发任何业务写操作。
+- **可视化落点**：逐帧画框/关系线/中文上下文面板只存在于 `examples/run_camera_visual.py`，属于**示例层**，
+  不进入 `src/`。它通过 `Pipeline.process_frame()` 返回的 `FrameResult.detection_items/tracked_items/
+  relation_items` 拿到本帧可绘制对象（单次推理，不重复调用适配器）；中文渲染依赖 Pillow + 系统中文字体
+  （`viz` extra，仅示例使用），缺失时降级为 ASCII 面板。生产实时链路仍走 `LiveRuntime`，示例为前台单循环
+  以便逐帧绘制（cv2 窗口须在主线程）。
 
 ## 数据分型
 

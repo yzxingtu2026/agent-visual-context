@@ -27,6 +27,10 @@ relate-anything = [
 vision = [
     { name = "opencv-python" },
 ]
+viz = [
+    { name = "opencv-python" },
+    { name = "pillow" },
+]
 yolo-world = [
     { name = "clip" },
     { name = "opencv-python" },
@@ -46,14 +50,16 @@ requires-dist = [
     { name = "clip", marker = "extra == 'yolo-world'", git = "https://github.com/ultralytics/CLIP.git" },
     { name = "opencv-python", marker = "extra == 'relate-anything'", specifier = ">=4.10,<5" },
     { name = "opencv-python", marker = "extra == 'vision'", specifier = ">=4.10,<5" },
+    { name = "opencv-python", marker = "extra == 'viz'", specifier = ">=4.10,<5" },
     { name = "opencv-python", marker = "extra == 'yolo-world'", specifier = ">=4.10,<5" },
     { name = "pillow", marker = "extra == 'relate-anything'", specifier = ">=10.0" },
+    { name = "pillow", marker = "extra == 'viz'", specifier = ">=10.0" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
     { name = "relsgg", marker = "extra == 'relate-anything'", git = "https://github.com/Maelic/RelateAnything.git" },
     { name = "ultralytics", marker = "extra == 'yolo-world'", specifier = ">=8.2" },
 ]
-provides-extras = ["relate-anything", "vision", "yolo-world"]
+provides-extras = ["relate-anything", "vision", "viz", "yolo-world"]
 
 [package.metadata.requires-dev]
 dev = [

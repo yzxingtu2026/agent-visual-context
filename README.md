@@ -140,6 +140,7 @@ get_turn_context(turn_id)             获取某个语音话轮的视觉快照
 uv sync                     # 创建 .venv，安装项目与开发依赖（pytest / ruff / mypy / opencv）
 uv sync --extra vision      # 运行环境需要 OpenCV 图片/视频输入时安装
 uv sync --extra yolo-world  # 需要真实 YOLO-World 检测时安装（引入 torch 等重依赖，AGPL-3.0，需联网下载权重）
+uv sync --extra viz         # 摄像头可视化示例的右下角中文面板需要（Pillow + 系统中文字体）
 ```
 
 ### 验证基线
@@ -211,6 +212,28 @@ uv run python examples/run_camera_live.py           # 示例：实时链路 + �
 摄像头循环只存在于 `runtime/live.py`，不写进模型适配器或 CLI。**目标设备（Windows 一体机）真机实测、
 CPU/内存/有效 FPS 等指标记录与 PoC 结论在后续 Issue 完成**；`LiveMetrics` 已预留 `cpu_percent`/`rss_mb`
 字段，由真机压测脚本填充。
+
+### 摄像头全链路可视化（PoC-5）
+
+`examples/run_camera_visual.py` 把整条链路跑在一张实时画面上，用于人工核对端到端效果：摄像头帧经
+检测（可切 YOLO-World）-> 跟踪 -> 关系推理（可切 RelateAnything）-> 时间线/摘要后，在画面上叠加
+每个目标的检测框（类别 + track_id + 置信度）、主宾语之间的关系连线，以及右下角的中文上下文面板
+（链路状态、有效 FPS、目标/关系/观察/事件计数与最近若干条视觉观察）。
+
+```bash
+uv sync --extra vision --extra viz                 # 摄像头 + 中文面板（Pillow）
+uv run python examples/run_camera_visual.py        # 默认设备 0，Mock 检测/关系，q/ESC 退出、s 存帧
+uv run python examples/run_camera_visual.py --detector yolo-world --reasoner relate-anything
+# 自配检测类别与关系词（逗号分隔）：
+uv run python examples/run_camera_visual.py --classes person,phone,screen \
+    --relations looking_at,holding,pointing_at,near
+# 无摄像头/无显示器时用离线素材跑同一套可视化并保存标注帧：
+uv run python examples/run_camera_visual.py --input tests/fixtures/sample_detection.png --save out.png
+```
+
+中文面板依赖 Pillow 与系统中文字体（`viz` extra）；OpenCV 的 `cv2.putText` 无法渲染中文，缺字体或
+未装 Pillow 时面板自动降级为 ASCII，检测框与关系连线照常绘制。生产实时链路仍用 `avc camera` /
+`run_camera_live.py`（采集/消费解耦的 Sidecar 循环）；本示例为前台单循环以便逐帧绘制（cv2 窗口须在主线程）。
 
 常用环境变量统一使用前缀 `AVC_`，例如 `AVC_SCENE_ID`、`AVC_SOURCE_ID`、`AVC_MAX_FRAMES`、
 `AVC_TARGET_FPS`、`AVC_OBSERVATION_TTL_SECONDS`、`AVC_WINDOW_SECONDS`、`AVC_LOG_LEVEL`、`AVC_FAIL_FAST`，
