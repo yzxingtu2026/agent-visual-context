@@ -54,6 +54,30 @@ class AppConfig(BaseSettings):
     detector_timeout_seconds: float = Field(default=10.0, gt=0)
     detector_weights: str = "yolov8s-worldv2.pt"
 
+    # 关系推理器（PoC-4：RelateAnything 适配器）
+    # backend=mock 时使用 MockRelationReasoner；backend=relate-anything 时装配真实适配器。
+    reasoner_backend: str = "mock"
+    # 首批关系词白名单，覆盖大屏场景相关的空间与交互关系。
+    reasoner_vocabulary: list[str] = Field(
+        default_factory=lambda: [
+            "looking_at",
+            "facing",
+            "holding",
+            "pointing_at",
+            "touching",
+            "near",
+        ]
+    )
+    # 模型级置信度阈值；开放词汇关系推理置信度普遍偏低，默认取值较小，
+    # 流水线仍会用 min_relation_confidence 做二次过滤。
+    reasoner_conf_threshold: float = Field(default=0.1, ge=0, le=1)
+    # 每帧返回的最大关系三元组数量。
+    reasoner_topk: int = Field(default=10, ge=1)
+    reasoner_device: str = "cpu"
+    # 单帧推理超时；超时按可恢复异常降级，不中断流水线。
+    reasoner_timeout_seconds: float = Field(default=15.0, gt=0)
+    reasoner_model_name: str = "maelic/relsgg-vits16plus"
+
     # 运行与可观测性
     log_level: str = "INFO"
     fail_fast: bool = False
@@ -95,6 +119,34 @@ class AppConfig(BaseSettings):
             msg = "detector_classes 至少需要一个非空目标类别"
             raise ConfigurationError(msg)
         return cleaned
+
+    @field_validator("reasoner_backend")
+    @classmethod
+    def _validate_reasoner_backend(cls, value: str) -> str:
+        allowed = {"mock", "relate-anything"}
+        normalized = value.strip().lower()
+        if normalized not in allowed:
+            msg = f"reasoner_backend 必须是 {sorted(allowed)} 之一，收到 {value!r}"
+            raise ConfigurationError(msg)
+        return normalized
+
+    @field_validator("reasoner_vocabulary")
+    @classmethod
+    def _validate_reasoner_vocabulary(cls, value: list[str]) -> list[str]:
+        cleaned = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+        if not cleaned:
+            msg = "reasoner_vocabulary 至少需要一个非空关系词"
+            raise ConfigurationError(msg)
+        return cleaned
+
+    @field_validator("reasoner_device")
+    @classmethod
+    def _validate_reasoner_device(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            msg = "reasoner_device 不能为空（例如 cpu、cuda、cuda:0、mps）"
+            raise ConfigurationError(msg)
+        return normalized
 
 
 def load_config(**overrides: object) -> AppConfig:

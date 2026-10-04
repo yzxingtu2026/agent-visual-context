@@ -11,6 +11,16 @@ from .mock import (
     ScriptedDetector,
     StaticSceneDetector,
 )
+from .relate_anything import (
+    DEFAULT_VOCABULARY,
+    RawTriplet,
+    RelateAnythingBackend,
+    RelateAnythingReasoner,
+    RelateAnythingSettings,
+    RelSggBackend,
+    RelationMetrics,
+    RelationStats,
+)
 from .yolo_world import (
     DetectionMetrics,
     DetectionStats,
@@ -22,6 +32,7 @@ from .yolo_world import (
 )
 
 __all__ = [
+    "DEFAULT_VOCABULARY",
     "DetectionMetrics",
     "DetectionStats",
     "Detector",
@@ -29,8 +40,15 @@ __all__ = [
     "MockTarget",
     "MockTracker",
     "RawDetection",
+    "RawTriplet",
+    "RelSggBackend",
+    "RelateAnythingBackend",
+    "RelateAnythingReasoner",
+    "RelateAnythingSettings",
+    "RelationMetrics",
     "RelationReasoner",
     "RelationRule",
+    "RelationStats",
     "ScriptedDetector",
     "StaticSceneDetector",
     "Tracker",
