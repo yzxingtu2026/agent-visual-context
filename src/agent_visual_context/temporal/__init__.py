@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .persistence import PersistenceGate
+from .persistence import GateUpdate, PersistenceGate
 from .timeline import BoundedTimeline, TimelineItem
 
-__all__ = ["BoundedTimeline", "PersistenceGate", "TimelineItem"]
+__all__ = ["BoundedTimeline", "GateUpdate", "PersistenceGate", "TimelineItem"]

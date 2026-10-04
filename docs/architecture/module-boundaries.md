@@ -1,7 +1,8 @@
 # 模块边界与依赖方向
 
 本文记录 `agent-visual-context` 的目录结构、模块职责、依赖方向与降级原则，是后续所有检测器、
-关系推理器和输入源接入时必须遵守的边界约定。对应 Issue #9（PoC-0 项目骨架）。
+关系推理器和输入源接入时必须遵守的边界约定。对应 Issue #9（PoC-0 项目骨架），
+关系生命周期与两类快照服务在 Issue #4（PoC-1 Mock 视觉时间线）中补充。
 
 ## 目录结构
 
@@ -81,6 +82,29 @@ cli / api  ->  runtime  ->  context / policies / temporal  ->  perception / inpu
 - 单帧关系不直接进入时间线：`PersistenceGate` 要求最小命中次数、最小持续时间，
   并在超过最大间隔时重置计数，用于抑制抖动；
 - 快照 `Snapshot` 始终限定在配置窗口内，并做去重（同一 subject+predicate+target 只保留最新一条）。
+
+### 关系生命周期（开始 / 持续 / 结束）
+
+`PersistenceGate.update_with_lifecycle()` 是关系生命周期的唯一口径，返回 `GateUpdate`：
+
+- **开始 / 持续**：某关系键（subject+predicate+target）命中累积到 `min_hits`
+  且首末命中间隔达到 `min_seconds` 后进入 `stable`，此时才被流水线提升为 `Observation`；
+- **短时丢帧容错**：相邻命中间隔只要不超过 `max_gap_seconds`，已累积的命中与首次时间
+  不被重置，关系仍可继续提升；
+- **结束**：曾经稳定（`promoted`）的关系超过 `max_gap_seconds` 未再命中时被遗忘，
+  并以结束前的最后一条证据进入 `ended`；从未成形即消失的抖动不产生 `ended`，避免误报。
+
+`update()` 是 `update_with_lifecycle().stable` 的便捷别名，保持既有调用方不变。
+
+### 两类快照服务
+
+`context/` 提供两个互补且**只读**时间线的快照服务，Agent 侧不得自行重复实现时间线查询：
+
+- `SceneSummarizer`：以“当前时刻往前 `window_seconds`”生成**当前场景摘要**，会先 `prune()`；
+- `WindowSnapshotBuilder`：按**调用方显式给定的 `[start, end]` 窗口**生成快照（例如某次语音
+  话轮的起止），同样做去重与过期过滤但不修改时间线。`api/queries.py::get_turn_context()`
+  复用它，避免在 API 层内联时间线逻辑。
+
 
 ## 降级原则
 
