@@ -1,0 +1,62 @@
+[project]
+name = "agent-visual-context"
+description = "面向 Agent 的实时视觉关系上下文处理器：把摄像头画面转换为带时间、置信度、有效期和来源的结构化视觉观察"
+readme = "README.md"
+requires-python = ">=3.12"
+dynamic = ["version"]
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+]
+
+[project.optional-dependencies]
+# 真实图片/视频/摄像头输入适配（PoC-2 起启用），骨架阶段默认不安装，保持环境轻量。
+vision = [
+    "opencv-python>=4.10",
+]
+
+[project.scripts]
+avc = "agent_visual_context.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/agent_visual_context/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_visual_context"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "examples"]
+# `.agent/` 下是团队工具与技能脚本，不属于本项目 Python 代码基线
+extend-exclude = [".agent", "docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "T20"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# CLI 与示例面向终端用户输出报告，允许 print；运行时日志仍必须走 logging。
+"src/agent_visual_context/cli.py" = ["T20"]
+"examples/**" = ["T20"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests"]
+strict = true
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

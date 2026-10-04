@@ -118,12 +118,54 @@ get_turn_context(turn_id)             获取某个语音话轮的视觉快照
 
 - [x] 从 `agent-project-skeleton` 模板初始化项目；
 - [x] 确立与阿国饭店大屏 Issue #446 的首个应用关系；
+- [x] 建立 Python 项目骨架、核心抽象接口、测试基线与最小 CLI（Issue #9）；
 - [ ] 完成图片/短视频最小闭环：检测框 -> 关系 -> 时间线；
 - [ ] 在目标 Windows 10 一体机上验证性能与资源隔离；
 - [ ] 设计视觉观察数据模型和 Agent API；
 - [ ] 实现主动迎宾候选事件与冷却状态机；
 - [ ] 接入阿国饭店双工语音上下文；
 - [ ] 发布可复用的 Agent Skills 适配包。
+
+## 本地开发与 PoC 运行
+
+项目使用 Python 3.12 与 [uv](https://docs.astral.sh/uv/) 管理依赖，正式代码位于 `src/agent_visual_context/`。
+
+### 环境准备
+
+```bash
+uv sync                  # 创建 .venv，安装项目与开发依赖（pytest / ruff / mypy）
+uv sync --extra vision   # 需要 OpenCV 输入适配时再安装（PoC-2 起使用）
+```
+
+### 验证基线
+
+```bash
+uv run pytest                 # 单元 / 契约 / 集成测试
+uv run ruff check .           # 静态检查
+uv run ruff format --check .  # 格式检查
+uv run mypy                   # 类型检查（strict，覆盖 src 与 tests）
+```
+
+### 运行最小 PoC
+
+```bash
+uv run avc version                            # 版本与运行环境
+uv run avc healthcheck                        # 用 Mock 组件跑通流水线并输出组件健康状态
+uv run avc run --frames 6                     # 输出场景摘要
+uv run avc run --frames 6 --json              # 输出可注入话轮上下文的快照 JSON
+uv run python examples/run_mock_pipeline.py   # 示例：组件注入、事件订阅与快照输出
+```
+
+常用环境变量统一使用前缀 `AVC_`，例如 `AVC_SCENE_ID`、`AVC_SOURCE_ID`、`AVC_MAX_FRAMES`、
+`AVC_TARGET_FPS`、`AVC_OBSERVATION_TTL_SECONDS`、`AVC_WINDOW_SECONDS`、`AVC_LOG_LEVEL`、`AVC_FAIL_FAST`。
+
+当前骨架不包含真实模型与摄像头：检测、跟踪与关系推理均由 Mock 组件提供，用于验证模块边界、
+时间线约束与降级机制；真实适配器分别在 Issue #6、#7、#8 中接入。
+
+### 架构与边界
+
+目录结构、依赖方向、可替换组件协议、数据分型与降级原则见
+[docs/architecture/module-boundaries.md](docs/architecture/module-boundaries.md)。
 
 ## 合规与许可证
 
