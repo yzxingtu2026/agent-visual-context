@@ -16,8 +16,10 @@ const toolRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(toolRoot, "..", "..", "..");
 
 const MEMBER = {
-  githubUser: "yz-yang04",
-  githubEmail: "yz-yang04@users.noreply.github.com",
+  name: "测试用户",
+  githubUser: "example-user",
+  githubEmail: "example-user@users.noreply.github.com",
+  role: "贡献者",
 };
 
 let cleanup = [];
@@ -79,14 +81,26 @@ test("resolveTargets 推断既有目标并支持 --agents/--target 等价", () =
   assert.deepEqual([...viaAgents].sort(), [...viaTarget].sort());
 });
 
-test("非交互 init 用团队映射补全真实姓名与角色", async () => {
+test("非交互 init 使用显式身份而不依赖团队映射", async () => {
   const repo = makeFixture();
   const result = await silence(() => runInit(repo, { nonInteractive: true, agents: "codex", ...MEMBER }));
   assert.equal(result.exitCode, 0);
   assert.ok(result.changedFiles.includes("AGENTS.md"));
   const content = repo.readText("AGENTS.md");
-  assert.match(content, /杨明锋/);
-  assert.match(content, /PM项目经理/);
+  assert.match(content, /测试用户/);
+  assert.match(content, /贡献者/);
+});
+
+test("无成员清单时从仓库 Git 配置初始化身份", async () => {
+  const repo = makeFixture();
+  assert.equal(repo.exists(".agent/team"), false);
+  execFileSync("git", ["config", "user.name", "公开贡献者"], { cwd: repo.root });
+  execFileSync("git", ["config", "user.email", "example@users.noreply.github.com"], { cwd: repo.root });
+  const result = await silence(() => runInit(repo, { nonInteractive: true, agents: "codex" }));
+  assert.equal(result.exitCode, 0);
+  assert.match(repo.readText("AGENTS.md"), /公开贡献者/);
+  assert.match(repo.readText("AGENTS.md"), /example@users\.noreply\.github\.com/);
+  assert.doesNotMatch(repo.readText("AGENTS.md"), /\.agent\/team/);
 });
 
 test("非交互 init 身份不足时返回结构化 config_incomplete", async () => {
@@ -148,7 +162,6 @@ test("sync 仅写入发生变化的生成物", async () => {
 test("status 汇总操作者、目标状态与推荐动作", async () => {
   const repo = makeFixture();
   const before = await silence(() => runStatus(repo, new Set(["codex"]), { ...MEMBER }));
-  assert.equal(before.operator.matchedMember, true);
   assert.equal(before.operator.resolved, true);
   assert.equal(before.nextAction, "init");
 
@@ -189,7 +202,6 @@ test("runCli --json 时 stdout 为纯 JSON 且带 schema/版本", async () => {
   assert.equal(payload.schemaVersion, "1.0");
   assert.equal(payload.command, "status");
   assert.equal(payload.cliVersion, require("../package.json").version);
-  assert.equal(payload.operator.matchedMember, true);
   setJsonMode(false);
 });
 

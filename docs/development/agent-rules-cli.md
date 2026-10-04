@@ -6,10 +6,12 @@
 
 - `.agent/rules/`：团队通用规则源。
 - `.agent/skills/`：通用技能源，首批包含 `qa-assist`。
-- `.agent/team/members.yml`：团队成员、GitHub、企业微信通知和提交邮箱映射。
-- `.agent/team/roles.yml`：团队角色说明和通用角色约束。
 - `.agent/adapters/`：不同厂商的输出路径和 frontmatter。
 - `.agent/templates/`：本地 `AGENTS.md`、`CLAUDE.md` 模板。
+
+## 公开仓库身份边界
+
+仓库只维护通用规则、技能与模板；不提交成员名单、角色映射、通讯账号或通知密钥。`init` 从显式参数、本地 Git 配置和 GitHub CLI 解析当前操作者，并将身份写入被 Git 忽略的本地入口文件。提交前请确认未强制追踪这些文件。
 
 ## 命令
 
@@ -67,7 +69,7 @@ agent-rules init --non-interactive --agents=codex,qoder \
   --name="张三" --github-user=zhangsan --github-email=zhangsan@users.noreply.github.com --json
 ```
 
-非交互模式不读取 stdin。操作者身份按优先级解析：**显式参数 > `.agent/team/members.yml` 匹配 > 本地 Git 配置 > `gh` 当前登录身份**。信息不足时返回结构化错误（`code=config_incomplete`），列出缺失字段与对应参数，不静默猜测或写入错误身份。离线 / CI 环境可设 `AGENT_RULES_NO_GH=1` 禁用 `gh` 探测，保证行为可确定。
+非交互模式不读取 stdin，也不依赖仓库内的成员映射。操作者身份按优先级解析：**显式参数 > 本地 Git 配置 > `gh` 当前登录身份**。信息不足时返回结构化错误（`code=config_incomplete`），列出缺失字段与对应参数，不静默猜测或写入错误身份。离线 / CI 环境可设 `AGENT_RULES_NO_GH=1` 禁用 `gh` 探测，保证行为可确定。
 
 ### JSON 输出与退出码
 
@@ -97,9 +99,7 @@ cd .agent/tools/agent-rules && npm run check && npm test
 
 - 修改规则时先改 `.agent/rules/`，再运行 `sync`。
 - 修改技能时先改 `.agent/skills/`，再运行 `sync`。
-- 修改团队成员和提交邮箱时先改 `.agent/team/members.yml`，再运行 `sync`。
 - 首次使用或更换操作者时运行 `init`，生成本地 `AGENTS.md` / `CLAUDE.md` 并配置本仓库 Git author；规则更新后运行 `sync` 刷新本地入口文件。
-- `init` 会优先按 GitHub 用户名或提交邮箱匹配 `.agent/team/members.yml`，再从 `.agent/team/roles.yml` 写入对应角色说明。
 - `.cursor/`、`.qoder/`、`.codex/`、`.claude/` 等厂商目录是本地生成物，已加入 `.gitignore`，不要长期手工维护或提交。
 - 生成文件顶部带中文生成标记。
 - `doctor` 用于本地 `sync` 后校验生成物是否一致；厂商目录被忽略时，CI 不应把生成物作为提交物检查。

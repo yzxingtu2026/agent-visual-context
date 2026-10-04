@@ -88,7 +88,7 @@ npx -y @yz-xingtu/agent-rules@latest ensure --agents=codex,qoder --non-interacti
 
 ## 非交互与身份解析
 
-`init --non-interactive` 不读取 stdin，操作者身份按优先级解析：**显式参数 > `.agent/team/members.yml` 匹配 > 本地 Git 配置 > `gh` 当前登录身份**。信息不足时返回结构化错误（`code=config_incomplete`，退出码 `2`），列出缺失字段与对应参数，不静默猜测。离线/CI 可设 `AGENT_RULES_NO_GH=1` 禁用 `gh` 探测。
+`init --non-interactive` 不读取 stdin，也不依赖仓库内的成员映射。操作者身份按优先级解析：**显式参数 > 本地 Git 配置 > `gh` 当前登录身份**。信息不足时返回结构化错误（`code=config_incomplete`，退出码 `2`），列出缺失字段与对应参数，不静默猜测。离线/CI 可设 `AGENT_RULES_NO_GH=1` 禁用 `gh` 探测。
 
 ## JSON 输出与退出码
 
@@ -108,7 +108,6 @@ npx -y @yz-xingtu/agent-rules@latest ensure --agents=codex,qoder --non-interacti
 ```text
 .agent/rules/       团队规则源
 .agent/skills/      通用技能源
-.agent/team/        团队成员和角色信息
 .agent/adapters/    厂商输出适配配置
 .agent/templates/   AGENTS.md / CLAUDE.md 模板
 ```

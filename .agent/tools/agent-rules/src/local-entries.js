@@ -2,7 +2,7 @@ const path = require("path");
 const { DEFAULT_LANGUAGE, DEFAULT_ROLE, LOCAL_NOTICE } = require("./constants");
 const { gitRemoteUrl } = require("./git");
 const { renderTemplate } = require("./template");
-const { findTeamMember, renderCommonConstraints, renderRoleGuide } = require("./team");
+const { renderCommonConstraints, renderRoleGuide } = require("./guidance");
 
 function renderLocalEntries(repo, profile) {
   const repository = inferRepositoryInfo(repo);
@@ -66,12 +66,6 @@ function parseProfileFromAgents(repo) {
   if (!profile.githubUsername) missingFields.push("githubUsername");
   if (!profile.githubEmail) missingFields.push("githubEmail");
 
-  if (!missingFields.length) {
-    const matchedMember = findTeamMember(repo, profile);
-    if (matchedMember) {
-      profile.role = matchedMember.role || profile.role;
-    }
-  }
   return { profile, missingFields, present: true };
 }
 
