@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from ..context import SceneSummarizer
+from ..context import SceneSummarizer, WindowSnapshotBuilder
 from ..domain import Event, Observation, Snapshot, utc_now
 from ..runtime.bus import EventBus, EventListener
 from ..runtime.pipeline import Pipeline
@@ -48,6 +48,7 @@ class VisualContextApi:
         self._summarizer = summarizer
         self._bus = bus
         self._clock = clock
+        self._window = WindowSnapshotBuilder(clock=clock)
 
     @classmethod
     def from_pipeline(cls, pipeline: Pipeline) -> VisualContextApi:
@@ -112,17 +113,11 @@ class VisualContextApi:
     ) -> TurnContext:
         """返回某个话轮时间范围内的视觉快照（截断、去重且过滤过期项）。"""
         moment = ended_at if ended_at is not None else (now if now is not None else self._clock())
-        observations = self._timeline.observations(start=started_at, end=moment, now=moment)
-        events = self._timeline.events(start=started_at, end=moment, now=moment)
-        snapshot = Snapshot(
+        snapshot = self._window.build(
+            self._timeline,
+            start=started_at,
+            end=moment,
             scene_id=self._scene_id,
-            generated_at=moment,
-            window_start=started_at,
-            window_end=moment,
-            observations=observations,
-            events=events,
-            highlights=[
-                f"话轮 {turn_id} 期间观察到 {len(observations)} 条视觉观察、{len(events)} 条规则事件"
-            ],
+            label=turn_id,
         )
         return TurnContext(turn_id=turn_id, snapshot=snapshot)
