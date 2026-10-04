@@ -54,6 +54,32 @@ def test_snapshot_is_deduped_and_window_bounded(config: AppConfig, clock: FakeCl
     assert snapshot.window_end == clock()
 
 
+def test_process_frame_exposes_drawable_items(config: AppConfig, clock: FakeClock) -> None:
+    """可视化示例依赖 FrameResult 承载本帧检测框/跟踪目标/关系，无需重复推理。"""
+    pipeline = build_mock_pipeline(config, clock=clock)
+    frames = synthetic_frames(
+        1,
+        source_id=config.source_id,
+        start=T0,
+        interval=timedelta(seconds=1 / config.target_fps),
+    )
+    pipeline.source.open()
+
+    frame_result = pipeline.process_frame(frames[0])
+
+    assert len(frame_result.detection_items) == frame_result.detections == 2
+    assert len(frame_result.tracked_items) == frame_result.tracked_objects == 2
+    assert {item.label for item in frame_result.tracked_items} == {"person", "screen"}
+    assert all(item.bbox.width > 0 for item in frame_result.tracked_items)
+    # Mock 关系规则 person looking_at screen，关系两端引用稳定 track_id
+    assert len(frame_result.relation_items) == frame_result.relations == 1
+    relation = frame_result.relation_items[0]
+    assert relation.predicate == "looking_at"
+    assert relation.subject.track_id == "person-01"
+    assert relation.target.track_id == "screen-01"
+    pipeline.source.close()
+
+
 def test_pipeline_degrades_when_reasoner_fails(config: AppConfig, clock: FakeClock) -> None:
     pipeline = build_mock_pipeline(config, clock=clock, reasoner=FailingReasoner())
 

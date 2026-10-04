@@ -78,6 +78,20 @@ class AppConfig(BaseSettings):
     reasoner_timeout_seconds: float = Field(default=15.0, gt=0)
     reasoner_model_name: str = "maelic/relsgg-vits16plus"
 
+    # 本地摄像头输入（PoC-5）
+    # 设备选择、请求分辨率与采集后端；采样频率复用 target_fps（低频采样）。
+    camera_device_index: int = Field(default=0, ge=0)
+    camera_width: int = Field(default=640, ge=1)
+    camera_height: int = Field(default=480, ge=1)
+    camera_backend: str = "opencv"
+
+    # 实时链路（PoC-5）：采集/消费解耦、有界保最新帧缓冲与降级阈值
+    # buffer_size=1 即"只保最新帧"；采集连续失败达上限则停止采集并降级。
+    live_buffer_size: int = Field(default=1, ge=1)
+    live_poll_interval: float = Field(default=0.05, gt=0)
+    live_max_capture_failures: int = Field(default=5, ge=1)
+    live_duration_seconds: float = Field(default=10.0, gt=0)
+
     # 运行与可观测性
     log_level: str = "INFO"
     fail_fast: bool = False
@@ -145,6 +159,16 @@ class AppConfig(BaseSettings):
         normalized = value.strip().lower()
         if not normalized:
             msg = "reasoner_device 不能为空（例如 cpu、cuda、cuda:0、mps）"
+            raise ConfigurationError(msg)
+        return normalized
+
+    @field_validator("camera_backend")
+    @classmethod
+    def _validate_camera_backend(cls, value: str) -> str:
+        allowed = {"opencv"}
+        normalized = value.strip().lower()
+        if normalized not in allowed:
+            msg = f"camera_backend 必须是 {sorted(allowed)} 之一，收到 {value!r}"
             raise ConfigurationError(msg)
         return normalized
 

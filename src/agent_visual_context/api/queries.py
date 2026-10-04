@@ -19,7 +19,10 @@ from datetime import datetime, timedelta
 from ..context import SceneSummarizer, WindowSnapshotBuilder
 from ..domain import Event, Observation, Snapshot, utc_now
 from ..runtime.bus import EventBus, EventListener
+from ..runtime.live import LiveRuntime
+from ..runtime.metrics import MetricsSnapshot
 from ..runtime.pipeline import Pipeline
+from ..runtime.status import PipelineStatus
 from ..temporal import BoundedTimeline
 
 
@@ -42,12 +45,14 @@ class VisualContextApi:
         summarizer: SceneSummarizer,
         bus: EventBus,
         clock: Callable[[], datetime] = utc_now,
+        live: LiveRuntime | None = None,
     ) -> None:
         self._scene_id = scene_id
         self._timeline = timeline
         self._summarizer = summarizer
         self._bus = bus
         self._clock = clock
+        self._live = live
         self._window = WindowSnapshotBuilder(clock=clock)
 
     @classmethod
@@ -60,6 +65,34 @@ class VisualContextApi:
             bus=pipeline.bus,
             clock=pipeline.clock,
         )
+
+    @classmethod
+    def from_live_runtime(cls, runtime: LiveRuntime) -> VisualContextApi:
+        """基于实时 Sidecar 运行时创建查询入口，额外暴露健康状态与运行指标。"""
+        pipeline = runtime.pipeline
+        return cls(
+            scene_id=pipeline.config.scene_id,
+            timeline=pipeline.timeline,
+            summarizer=pipeline.summarizer,
+            bus=pipeline.bus,
+            clock=pipeline.clock,
+            live=runtime,
+        )
+
+    def get_health(self) -> PipelineStatus | None:
+        """返回实时链路的健康状态（组件级 + 整体）；无实时运行时时返回 `None`。
+
+        这是宿主链路（大屏/语音）判断视觉是否可用的唯一口径：视觉降级时读取到
+        `degraded`/`failed` 状态即可跳过视觉增强，而不必等待或阻塞。
+        """
+        return self._live.status if self._live is not None else None
+
+    def get_metrics(self, *, now: datetime | None = None) -> MetricsSnapshot | None:
+        """返回实时链路运行指标快照（有效 FPS、延迟、丢帧率、失败率）；无实时运行时时返回 `None`。"""
+        if self._live is None:
+            return None
+        moment = now if now is not None else self._clock()
+        return self._live.metrics.snapshot(now=moment)
 
     def get_scene_snapshot(self, *, now: datetime | None = None) -> Snapshot:
         moment = now if now is not None else self._clock()

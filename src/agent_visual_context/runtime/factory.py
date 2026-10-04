@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -15,6 +16,7 @@ from ..context import SceneSummarizer
 from ..domain import BBox, utc_now
 from ..input import ScriptedFrameSource, frame_source_from_path, synthetic_frames
 from ..input.base import FrameSource
+from ..input.camera import CameraBackend, CameraSource
 from ..perception import (
     MockRelationReasoner,
     MockTarget,
@@ -27,7 +29,10 @@ from ..perception import (
 from ..perception.base import Detector, RelationReasoner, Tracker
 from ..policies import GreetingCandidatePolicy, Policy
 from ..temporal import BoundedTimeline, PersistenceGate
+from .buffer import LatestFrameBuffer
 from .bus import EventBus
+from .live import LiveRuntime
+from .metrics import LiveMetrics
 from .pipeline import Pipeline
 
 DEFAULT_TARGETS: tuple[MockTarget, ...] = (
@@ -178,4 +183,89 @@ def build_offline_pipeline(
         bus=bus,
         targets=targets,
         relation_rules=relation_rules,
+    )
+
+
+def build_camera_source(
+    config: AppConfig,
+    *,
+    source_id: str | None = None,
+    backend: CameraBackend | None = None,
+    backend_factory: Callable[[int, int, int], CameraBackend] | None = None,
+    sleeper: Callable[[float], None] = time.sleep,
+    clock: Callable[[], datetime] = utc_now,
+) -> CameraSource:
+    """按配置装配本地摄像头输入源。
+
+    设备索引、请求分辨率取自 `config.camera_*`，采样频率复用 `config.target_fps`。
+    真实采集走 `OpenCVCameraBackend`（惰性加载 cv2）；测试与离线验证可注入 `backend`
+    或 `backend_factory`，无需真实摄像头。
+    """
+    return CameraSource(
+        device_index=config.camera_device_index,
+        width=config.camera_width,
+        height=config.camera_height,
+        target_fps=config.target_fps,
+        source_id=source_id,
+        backend=backend,
+        backend_factory=backend_factory,
+        sleeper=sleeper,
+        clock=clock,
+    )
+
+
+def build_live_runtime(
+    config: AppConfig,
+    *,
+    clock: Callable[[], datetime] = utc_now,
+    monotonic: Callable[[], float] = time.monotonic,
+    source: CameraSource | None = None,
+    backend: CameraBackend | None = None,
+    backend_factory: Callable[[int, int, int], CameraBackend] | None = None,
+    sleeper: Callable[[float], None] = time.sleep,
+    detector: Detector | None = None,
+    tracker: Tracker | None = None,
+    reasoner: RelationReasoner | None = None,
+    policies: Sequence[Policy] | None = None,
+    bus: EventBus | None = None,
+    buffer: LatestFrameBuffer | None = None,
+    metrics: LiveMetrics | None = None,
+    targets: Sequence[MockTarget] = DEFAULT_TARGETS,
+    relation_rules: Sequence[RelationRule] = DEFAULT_RELATION_RULES,
+) -> LiveRuntime:
+    """装配以本地摄像头为输入的实时 Sidecar 运行时。
+
+    与离线流水线复用同一套领域模型、时间线、策略与感知装配（`build_mock_pipeline`），
+    仅把输入源替换为 `CameraSource`，并用 `LiveRuntime` 驱动采集/消费解耦的持续循环。
+    检测器/关系推理器仍按 `detector_backend`/`reasoner_backend` 装配（Mock 或真实适配器）。
+    摄像头循环只存在于 `runtime/live.py`，不写进适配器或 CLI。
+    """
+    camera = source or build_camera_source(
+        config, backend=backend, backend_factory=backend_factory, sleeper=sleeper, clock=clock
+    )
+    resolved_config = config.model_copy(update={"source_id": camera.source_id})
+    pipeline = build_mock_pipeline(
+        resolved_config,
+        clock=clock,
+        source=camera,
+        detector=detector or build_detector(resolved_config, targets=targets),
+        tracker=tracker,
+        reasoner=reasoner or build_reasoner(resolved_config, relation_rules=relation_rules),
+        policies=policies,
+        bus=bus,
+        targets=targets,
+        relation_rules=relation_rules,
+    )
+    resolved_buffer = (
+        buffer if buffer is not None else LatestFrameBuffer(maxsize=config.live_buffer_size)
+    )
+    resolved_metrics = metrics if metrics is not None else LiveMetrics(clock=clock)
+    return LiveRuntime(
+        pipeline,
+        buffer=resolved_buffer,
+        metrics=resolved_metrics,
+        clock=clock,
+        monotonic=monotonic,
+        poll_interval=config.live_poll_interval,
+        max_capture_failures=config.live_max_capture_failures,
     )

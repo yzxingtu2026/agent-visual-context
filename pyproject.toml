@@ -10,9 +10,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# 真实图片/视频/摄像头输入适配（PoC-2 起启用），骨架阶段默认不安装，保持环境轻量。
+# 真实图片/视频/摄像头输入适配（PoC-2 起启用，PoC-5 摄像头强依赖），骨架阶段默认不安装，保持环境轻量。
+# opencv-python 上界 <5：5.0.0.93 是仅含元数据、缺失 cv2 模块的坏 wheel，会导致 import cv2 失败。
 vision = [
-    "opencv-python>=4.10",
+    "opencv-python>=4.10,<5",
 ]
 # YOLO-World 目标检测适配器（PoC-3）。ultralytics 会引入 torch 等重依赖，
 # 且许可证为 AGPL-3.0；默认不安装，需联网下载权重，商用前须完成合规确认。
@@ -21,7 +22,7 @@ vision = [
 # 详见 docs/research/yolo-world.md。
 yolo-world = [
     "ultralytics>=8.2",
-    "opencv-python>=4.10",
+    "opencv-python>=4.10,<5",
     "clip @ git+https://github.com/ultralytics/CLIP.git",
 ]
 # RelateAnything 关系推理适配器（PoC-4）。relsgg 会引入 torch、transformers 等重依赖，
@@ -30,7 +31,14 @@ yolo-world = [
 # 详见 docs/research/relate-anything.md。
 relate-anything = [
     "relsgg @ git+https://github.com/Maelic/RelateAnything.git",
-    "opencv-python>=4.10",
+    "opencv-python>=4.10,<5",
+    "Pillow>=10.0",
+]
+# 可视化示例（examples/run_camera_visual.py）：OpenCV 的 cv2.putText 无法渲染中文，
+# 右下角中文上下文面板需要 Pillow + 系统中文字体绘制。缺失时示例降级为 ASCII 面板，
+# 检测框仍正常绘制，不崩溃。
+viz = [
+    "opencv-python>=4.10,<5",
     "Pillow>=10.0",
 ]
 
@@ -43,7 +51,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     # PoC-2 起测试需要生成/读取真实图片与视频素材
-    "opencv-python>=4.10",
+    "opencv-python>=4.10,<5",
 ]
 
 [build-system]

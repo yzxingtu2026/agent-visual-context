@@ -6,6 +6,24 @@
 
 > 本项目输出的是视觉观察，不是用户指令、身份事实或业务事实。任何订单、支付、服务请求等业务动作都必须经过用户明确表达、Agent 安全策略和业务后端权威校验。
 
+## 快速开始：主要演示入口
+
+想最快看到整条链路跑起来，直接运行**主要演示入口** `examples/run_camera_visual.py`：摄像头实时画面
+经检测 -> 跟踪 -> 关系推理 -> 时间线/摘要后，叠加目标检测框、主宾语关系连线与右下角中文上下文面板
+（如「人拿着手机」「人看着屏幕」）。
+
+```bash
+# 一次装齐演示所需依赖（uv extras 不叠加，需一次列全）
+uv sync --extra vision --extra viz --extra yolo-world --extra relate-anything
+
+# 办公室场景（笔记本自带摄像头）：真实检测 + 真实关系推理 + 中文上下文
+uv run python examples/run_camera_visual.py --detector yolo-world --reasoner relate-anything \
+    --classes person,hand,phone,laptop --relations holding,looking_at,touching,near
+```
+
+窗口内 `q`/`ESC` 退出、`s` 保存当前帧；无摄像头或无显示器时加 `--input 图片/视频 --save out.png`
+即可用离线素材跑同一套可视化。更多场景类别组合、关系词与参数见下文「摄像头全链路可视化」小节。
+
 ## 为什么需要这个项目？
 
 单帧目标检测只能回答“画面里有什么”，而 Agent 往往还需要知道：
@@ -122,7 +140,10 @@ get_turn_context(turn_id)             获取某个语音话轮的视觉快照
 - [x] 用 Mock 检测/关系结果跑通视觉时间线（Issue #4）；
 - [x] 完成图片/短视频最小闭环：统一帧输入 -> Mock 检测/关系 -> 时间线（Issue #5）；
 - [x] 接入 YOLO-World 目标检测适配器：可配置类别/阈值/设备，模型不可用时降级（Issue #6）；
-- [ ] 在目标 Windows 10 一体机上验证性能与资源隔离；
+- [x] 接入 RelateAnything 关系推理适配器：可配置关系词/阈值/设备，模型不可用时降级（Issue #7）；
+- [x] 接入本地摄像头实时链路：CameraSource + 有界保最新帧队列 + 实时 Sidecar 循环 + 健康/指标（Issue #8）；
+- [x] 摄像头全链路可视化主要演示入口：检测框 + 关系连线 + 中文上下文面板，可自配类别/关系词（Issue #8）；
+- [ ] 在目标 Windows 10 一体机上执行摄像头真机实测、资源隔离验证与 PoC 结论（Issue #8 后续）；
 - [ ] 设计视觉观察数据模型和 Agent API；
 - [ ] 实现主动迎宾候选事件与冷却状态机；
 - [ ] 接入阿国饭店双工语音上下文；
@@ -138,6 +159,9 @@ get_turn_context(turn_id)             获取某个语音话轮的视觉快照
 uv sync                     # 创建 .venv，安装项目与开发依赖（pytest / ruff / mypy / opencv）
 uv sync --extra vision      # 运行环境需要 OpenCV 图片/视频输入时安装
 uv sync --extra yolo-world  # 需要真实 YOLO-World 检测时安装（引入 torch 等重依赖，AGPL-3.0，需联网下载权重）
+uv sync --extra viz         # 摄像头可视化示例的右下角中文面板需要（Pillow + 系统中文字体）
+# 主要演示入口一次装齐（extras 不叠加，需一次列全）：
+uv sync --extra vision --extra viz --extra yolo-world --extra relate-anything
 ```
 
 ### 验证基线
@@ -148,6 +172,45 @@ uv run ruff check .           # 静态检查
 uv run ruff format --check .  # 格式检查
 uv run mypy                   # 类型检查（strict，覆盖 src 与 tests）
 ```
+
+### 主要演示入口：摄像头全链路可视化（PoC-5）
+
+`examples/run_camera_visual.py` 是本项目的主要演示入口，把整条链路跑在一张实时画面上：摄像头帧经
+检测（可切 YOLO-World）-> 跟踪 -> 关系推理（可切 RelateAnything）-> 时间线/摘要后，在画面上叠加
+每个目标的检测框（类别 + track_id + 置信度）、主宾语之间的关系连线，以及右下角的中文上下文面板
+（链路状态、有效 FPS、目标/关系/观察/事件计数，以及「人拿着手机」「人看着屏幕」这类自然中文观察句）。
+
+```bash
+uv sync --extra vision --extra viz                 # 摄像头 + 中文面板（Pillow）
+uv run python examples/run_camera_visual.py        # 默认设备 0，Mock 检测/关系，q/ESC 退出、s 存帧
+uv run python examples/run_camera_visual.py --detector yolo-world --reasoner relate-anything
+# 自配检测类别与关系词（逗号分隔）：
+uv run python examples/run_camera_visual.py --classes person,phone,screen \
+    --relations looking_at,holding,pointing_at,near
+# 无摄像头/无显示器时用离线素材跑同一套可视化并保存标注帧：
+uv run python examples/run_camera_visual.py --input tests/fixtures/sample_detection.png --save out.png
+```
+
+办公室场景（笔记本自带摄像头）常用类别组合，从轻量到全量（类别越多单帧越慢，CPU 上建议 `--fps 1`）：
+
+```bash
+# 人手与手持设备（最轻量，最适合看「人拿着手机」效果）
+uv run python examples/run_camera_visual.py --detector yolo-world --reasoner relate-anything \
+    --classes person,hand,phone,laptop --relations holding,looking_at,touching,near
+# 桌面物品
+uv run python examples/run_camera_visual.py --detector yolo-world --reasoner relate-anything \
+    --classes person,laptop,keyboard,mouse,cup,bottle --relations using,looking_at,touching,next_to,near
+# 会议/协作
+uv run python examples/run_camera_visual.py --detector yolo-world --reasoner relate-anything \
+    --classes person,chair,table,laptop,screen,whiteboard --relations sitting_on,facing,looking_at,pointing_at,near
+# 阅读/书写
+uv run python examples/run_camera_visual.py --detector yolo-world --reasoner relate-anything \
+    --classes person,book,notebook,paper,pen,phone --relations holding,reading,looking_at,typing_on,near
+```
+
+中文面板依赖 Pillow 与系统中文字体（`viz` extra）；OpenCV 的 `cv2.putText` 无法渲染中文，缺字体或
+未装 Pillow 时面板自动降级为 ASCII，检测框与关系连线照常绘制。生产实时链路仍用 `avc camera` /
+`run_camera_live.py`（采集/消费解耦的 Sidecar 循环）；本示例为前台单循环以便逐帧绘制（cv2 窗口须在主线程）。
 
 ### 运行最小 PoC
 
@@ -191,13 +254,34 @@ uv run python examples/run_yolo_world_detection.py    # 逐帧打印检测框/�
 失败时流水线降级为“该帧无检测”而不崩溃。模型版本、权重来源、许可证（AGPL-3.0/GPL-3.0，商用前
 须完成合规确认）与真机基准口径见 [docs/research/yolo-world.md](docs/research/yolo-world.md)。
 
+### 运行摄像头实时链路 PoC（PoC-5）
+
+安装 `vision` extra 后，`avc camera` 会启动本地摄像头的实时 Sidecar 链路：后台采集线程持续抓帧写入
+有界“保最新帧”缓冲，主循环按 `--fps` 低频取最新帧推理；摄像头打不开、读帧失败或模型超时都只降级、
+不阻塞宿主（大屏与语音链路），运行结束输出健康状态、运行指标与场景快照：
+
+```bash
+uv sync --extra vision
+uv run avc camera --duration 10                     # 默认设备 0，运行 10s 后输出健康/指标/摘要
+uv run avc camera --device 1 --fps 2 --frames 20    # 指定设备、采样帧率与最大处理帧数
+uv run avc camera --duration 5 --json               # 输出健康状态 + 指标 + 快照 JSON
+uv run python examples/run_camera_live.py           # 示例：实时链路 + 健康/指标/快照输出
+```
+
+设备选择、请求分辨率、缓冲容量、采集失败上限与运行时长均可配置（`AVC_CAMERA_*`、`AVC_LIVE_*`）；
+摄像头循环只存在于 `runtime/live.py`，不写进模型适配器或 CLI。**目标设备（Windows 一体机）真机实测、
+CPU/内存/有效 FPS 等指标记录与 PoC 结论在后续 Issue 完成**；`LiveMetrics` 已预留 `cpu_percent`/`rss_mb`
+字段，由真机压测脚本填充。
+
 常用环境变量统一使用前缀 `AVC_`，例如 `AVC_SCENE_ID`、`AVC_SOURCE_ID`、`AVC_MAX_FRAMES`、
 `AVC_TARGET_FPS`、`AVC_OBSERVATION_TTL_SECONDS`、`AVC_WINDOW_SECONDS`、`AVC_LOG_LEVEL`、`AVC_FAIL_FAST`，
 以及检测器相关的 `AVC_DETECTOR_BACKEND`、`AVC_DETECTOR_CLASSES`、`AVC_DETECTOR_DEVICE` 等。
 
-当前 PoC 尚未接入摄像头：输入支持离线图片/视频文件（Issue #5），目标检测已可选接入真实
-YOLO-World 适配器（Issue #6，默认仍为 Mock），跟踪与关系推理仍由 Mock 组件提供，用于验证模块
-边界、时间线约束与降级机制；真实跟踪与关系推理适配器分别在 Issue #7、#8 中接入。
+当前 PoC 进度：输入支持离线图片/视频文件（Issue #5）与本地摄像头实时流（Issue #8）；目标检测可选接入
+真实 YOLO-World 适配器（Issue #6，默认仍为 Mock），关系推理可选接入真实 RelateAnything 适配器
+（Issue #7，默认仍为 Mock），跟踪仍由 Mock 组件提供，用于验证模块边界、时间线约束与降级机制。
+摄像头链路的真机性能实测、资源隔离验证与 PoC 结论在后续 Issue 完成。所有视觉输出均为辅助观察，
+不触发任何业务写操作。
 
 ### 架构与边界
 

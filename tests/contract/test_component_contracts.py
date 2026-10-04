@@ -13,6 +13,7 @@ import pytest
 from agent_visual_context.domain import BBox, Detection, Frame, Relation, TrackedObject
 from agent_visual_context.errors import FrameSourceError
 from agent_visual_context.input import (
+    CameraSource,
     ImageFrameSource,
     ScriptedFrameSource,
     VideoFrameSource,
@@ -38,7 +39,7 @@ from agent_visual_context.perception.yolo_world import (
     YoloWorldDetector,
     YoloWorldSettings,
 )
-from tests.conftest import SAMPLE_IMAGE, SAMPLE_VIDEO, T0
+from tests.conftest import SAMPLE_IMAGE, SAMPLE_VIDEO, T0, FakeCameraBackend
 
 
 def consume_source(source: FrameSource) -> list[str]:
@@ -311,3 +312,19 @@ def test_relate_anything_replaces_mock_without_upstream_changes() -> None:
     assert all(isinstance(r, Relation) for r in mock_relations)
     # 真实适配器输出更丰富（含 near），Mock 只按规则输出 looking_at
     assert len(real_relations) >= len(mock_relations)
+
+
+def test_camera_source_satisfies_frame_source_protocol() -> None:
+    """摄像头源满足 `FrameSource` 协议，可与离线源一样注入流水线。"""
+    source: FrameSource = CameraSource(
+        device_index=0, backend=FakeCameraBackend(), target_fps=100.0, sleeper=lambda _s: None
+    )
+
+    source.open()
+    frame = source.read()
+    source.close()
+
+    assert frame is not None
+    assert frame.metadata["kind"] == "camera"
+    assert frame.frame_id.startswith("camera-0-")
+    assert frame.source_id == "camera-0"

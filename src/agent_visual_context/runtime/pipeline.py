@@ -17,7 +17,16 @@ from typing import TypeVar
 
 from ..config import AppConfig
 from ..context import SceneSummarizer
-from ..domain import Event, Frame, Observation, Snapshot, utc_now
+from ..domain import (
+    Detection,
+    Event,
+    Frame,
+    Observation,
+    Relation,
+    Snapshot,
+    TrackedObject,
+    utc_now,
+)
 from ..errors import PerceptionError
 from ..input.base import FrameSource
 from ..logging_setup import get_logger
@@ -34,7 +43,12 @@ _T = TypeVar("_T")
 
 @dataclass(slots=True)
 class FrameResult:
-    """单帧处理结果，便于测试与调试。"""
+    """单帧处理结果，便于测试与调试。
+
+    计数字段（`detections`/`tracked_objects`/`relations`）用于轻量统计；
+    `*_items` 字段承载该帧实际的对象，供可视化/调试示例直接绘制检测框、
+    跟踪目标与关系连线，避免上层为拿框而重复推理。默认为空，不影响既有行为。
+    """
 
     frame_id: str
     detections: int = 0
@@ -43,6 +57,9 @@ class FrameResult:
     observations: list[Observation] = field(default_factory=list)
     events: list[Event] = field(default_factory=list)
     degraded_components: tuple[str, ...] = ()
+    detection_items: tuple[Detection, ...] = ()
+    tracked_items: tuple[TrackedObject, ...] = ()
+    relation_items: tuple[Relation, ...] = ()
 
 
 @dataclass(slots=True)
@@ -113,6 +130,11 @@ class Pipeline:
     @property
     def config(self) -> AppConfig:
         return self._config
+
+    @property
+    def source(self) -> FrameSource:
+        """当前流水线的输入源；实时链路由 `LiveRuntime` 驱动其采集生命周期。"""
+        return self._source
 
     @property
     def clock(self) -> Callable[[], datetime]:
@@ -232,6 +254,10 @@ class Pipeline:
             if name not in degraded:
                 self.status.mark_ok(name, now=moment)
         result.degraded_components = tuple(degraded)
+        # 承载本帧可绘制对象，供可视化/调试示例直接取用（避免重复推理）。
+        result.detection_items = tuple(detections)
+        result.tracked_items = tuple(tracked)
+        result.relation_items = tuple(relations)
         self.status.frames_processed += 1
         self.status.refresh(now=moment)
         return result
