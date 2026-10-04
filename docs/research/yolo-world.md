@@ -128,14 +128,20 @@ uv run avc run --input tests/fixtures/sample_image.png --detector yolo-world --j
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | MacBook Air (macOS) | yolov8s-worldv2.pt | 640 | cpu | sample_image.png（320x240） | 3.145 / 3.145 / 3.145（冷启动，含加载） | 未采集 | 检出 0；合成图无真实 person/hand/phone/screen，属预期 |
 | MacBook Air (macOS) | yolov8s-worldv2.pt | 640 | cpu | sample_video.mp4（160x120，4 帧） | 0.190 / 0.807 / 3.145（首帧冷、后续约 0.19） | 未采集 | 每帧检出 1 个 `screen`，conf 0.05–0.08（低置信度，开放词汇在合成小图上的正常表现） |
+| MacBook Air (macOS) | yolov8s-worldv2.pt | 640 | cpu | sample_detection.png（1024x768，真实场景样本） | 3.552（冷启动单帧） | 未采集 | 检出 person **0.95**、screen 0.16、hand 0.08/0.06；phone 未过阈值（小目标漏检） |
 
-结论：真实推理链路已跑通，权重加载后单帧 CPU 推理约 0.19s；输出为低置信度 `screen`，
-说明固定合成素材并非理想评估样本，需换用含真实 person/hand/phone/screen 的素材再评质量。
+`tests/fixtures/sample_detection.png` 是新增的**真实检测样本**（人在菜单屏前手持手机），
+用于人工核对检测质量；`sample_image.png`/`sample_video.mp4` 仍是合成素材，仅验证接线与降级。
+
+结论：真实推理链路已跑通，权重加载后单帧 CPU 推理约 0.19s。在真实场景样本上 `person` 置信度高达
+0.95，证明适配器归一化正确；但 `hand`/`screen`/`phone` 置信度偏低（0.06–0.16）、`phone` 漏检，
+说明 `yolov8s-worldv2`（小模型）对手部/手机等小目标召回有限，评估时需结合业务阈值权衡，
+必要时改用更大权重（`m/l/x`）或提高 `detector_imgsz`。
 CPU/内存峰值本轮未采集，且**目标 Windows 10 一体机基准仍待实测**（issue #6 不承诺一体机实时性能）：
 
 | 设备 | 权重 | imgsz | device | 素材 | 单帧延迟(min/mean/max, s) | CPU/内存峰值 | 检测数量/质量备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Windows 10 一体机（待填写） | yolov8s-worldv2.pt | 640 | cpu | 待补真实素材 | 待填写 | 待填写 | 待填写 |
+| Windows 10 一体机（待填写） | yolov8s-worldv2.pt | 640 | cpu | sample_detection.png | 待填写 | 待填写 | 待填写 |
 
 质量评估口径：人工核对固定素材上的检测框是否覆盖 person/hand/phone/screen，记录漏检、误检与
 置信度分布，作为是否进入真实摄像头阶段（PoC-5）的依据。

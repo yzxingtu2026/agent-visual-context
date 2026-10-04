@@ -170,7 +170,11 @@ def test_loader_dispatches_directory_of_images() -> None:
 
     assert isinstance(source, ImageFrameSource)
     assert source.source_id == "fixtures"
-    assert [path.name for path in source.paths] == ["sample_image.png"]
+    # fixtures 目录含合成小图与一张真实检测样本，按文件名排序回放
+    assert [path.name for path in source.paths] == [
+        "sample_detection.png",
+        "sample_image.png",
+    ]
 
 
 def test_loader_rejects_missing_path(tmp_path: Path) -> None:

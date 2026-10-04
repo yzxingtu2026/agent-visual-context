@@ -171,9 +171,10 @@ uv run python examples/run_offline_pipeline.py                  # 示例：图�
 uv run python examples/run_offline_pipeline.py path/to/video.mp4
 ```
 
-固定测试素材位于 `tests/fixtures/`（320x240 PNG 与 2s/10fps MP4），集成测试不依赖摄像头、
-GPU 或网络模型下载。视频帧时间戳按 `start + 原始帧号 / 源帧率` 统一映射，默认以“素材末帧
-即打开时刻”锚定回放，保证离线素材落入时间线窗口。
+固定测试素材位于 `tests/fixtures/`：`sample_image.png`（320x240 合成 PNG）与 `sample_video.mp4`
+（2s/10fps MP4）用于验证接线与降级；`sample_detection.png`（1024x768 真实场景图，含 person/hand/phone/screen）
+用于人工核对 YOLO-World 真实检测质量。集成测试不依赖摄像头、GPU 或网络模型下载。视频帧时间戳按
+`start + 原始帧号 / 源帧率` 统一映射，默认以“素材末帧即打开时刻”锚定回放，保证离线素材落入时间线窗口。
 
 ### 运行 YOLO-World 真实检测（可选）
 

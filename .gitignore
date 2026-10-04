@@ -10,6 +10,9 @@ CLAUDE.md
 .trae/
 .warp/
 
+# 图像生成脚本的临时产出目录（正式检测样本请移入 tests/fixtures/）
+vibe_images/
+
 .DS_Store
 __pycache__/
 *.py[cod]
