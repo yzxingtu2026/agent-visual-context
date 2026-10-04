@@ -68,8 +68,9 @@ class AppConfig(BaseSettings):
             "near",
         ]
     )
-    # 模型级置信度阈值；低于此值的关系三元组在适配器层即被过滤。
-    reasoner_conf_threshold: float = Field(default=0.3, ge=0, le=1)
+    # 模型级置信度阈值；开放词汇关系推理置信度普遍偏低，默认取值较小，
+    # 流水线仍会用 min_relation_confidence 做二次过滤。
+    reasoner_conf_threshold: float = Field(default=0.1, ge=0, le=1)
     # 每帧返回的最大关系三元组数量。
     reasoner_topk: int = Field(default=10, ge=1)
     reasoner_device: str = "cpu"

@@ -63,7 +63,7 @@ class RelateAnythingSettings:
     """RelateAnything 关系推理器的可配置项，可由 `AppConfig` 派生。"""
 
     vocabulary: tuple[str, ...] = DEFAULT_VOCABULARY
-    conf_threshold: float = 0.3
+    conf_threshold: float = 0.1
     topk: int = 10
     device: str = "cpu"
     timeout_seconds: float = 15.0
@@ -194,24 +194,31 @@ class RelSggBackend:
     ) -> list[RawTriplet]:
         """将 relsgg 输出的三元组列表转换为 RawTriplet。
 
-        relsgg predict 返回格式预期为 (subject_idx, predicate, object_idx, score) 元组列表，
-        具体格式以实际模型输出为准，此处做防御性解析。
+        relsgg predict 返回 `relsgg.api.Triplet` 对象列表，每个对象具有
+        subject_idx、object_idx、predicate、score 属性。此处同时兼容
+        元组/字典格式以应对未来 API 变动。
         """
         triplets: list[RawTriplet] = []
         if not raw_results:
             return triplets
         for item in raw_results:
             try:
-                if hasattr(item, "__len__") and len(item) >= 4:
+                # relsgg.api.Triplet 对象（首选路径）
+                if hasattr(item, "subject_idx") and hasattr(item, "predicate"):
+                    subject_idx = int(item.subject_idx)
+                    predicate = str(item.predicate)
+                    object_idx = int(item.object_idx)
+                    confidence = float(item.score)
+                elif isinstance(item, dict):
+                    subject_idx = int(item.get("subject_idx", item.get("subject_index", -1)))
+                    predicate = str(item["predicate"])
+                    object_idx = int(item.get("object_idx", item.get("object_index", -1)))
+                    confidence = float(item.get("score", item.get("confidence", 0.0)))
+                elif hasattr(item, "__len__") and len(item) >= 4:
                     subject_idx = int(item[0])
                     predicate = str(item[1])
                     object_idx = int(item[2])
                     confidence = float(item[3])
-                elif isinstance(item, dict):
-                    subject_idx = int(item["subject_index"])
-                    predicate = str(item["predicate"])
-                    object_idx = int(item["object_index"])
-                    confidence = float(item["confidence"])
                 else:
                     continue
                 if confidence < conf_threshold:
@@ -224,7 +231,7 @@ class RelSggBackend:
                         confidence=confidence,
                     )
                 )
-            except (TypeError, ValueError, KeyError, IndexError):
+            except (TypeError, ValueError, KeyError, IndexError, AttributeError):
                 continue
         return triplets
 

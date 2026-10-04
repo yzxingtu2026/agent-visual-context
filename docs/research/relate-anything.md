@@ -33,14 +33,15 @@ looking_at, facing, holding, pointing_at, touching, near
 | --- | --- | --- | --- |
 | `reasoner_backend` | `AVC_REASONER_BACKEND` | `mock` | `mock` 或 `relate-anything`；决定工厂装配哪种推理器 |
 | `reasoner_vocabulary` | `AVC_REASONER_VOCABULARY` | `["looking_at","facing","holding","pointing_at","touching","near"]` | 关系词白名单（JSON 数组） |
-| `reasoner_conf_threshold` | `AVC_REASONER_CONF_THRESHOLD` | `0.3` | 模型级置信度阈值；低于此值的三元组在适配器层过滤 |
+| `reasoner_conf_threshold` | `AVC_REASONER_CONF_THRESHOLD` | `0.1` | 模型级置信度阈值；开放词汇关系推理置信度普遍偏低，故取值较小 |
 | `reasoner_topk` | `AVC_REASONER_TOPK` | `10` | 每帧返回的最大关系三元组数量 |
 | `reasoner_device` | `AVC_REASONER_DEVICE` | `cpu` | 推理设备：`cpu` / `cuda` / `cuda:0` / `mps` |
 | `reasoner_timeout_seconds` | `AVC_REASONER_TIMEOUT_SECONDS` | `15.0` | 单帧推理超时，超时降级 |
 | `reasoner_model_name` | `AVC_REASONER_MODEL_NAME` | `maelic/relsgg-vits16plus` | HuggingFace 模型名或本地路径 |
 
 说明：`reasoner_conf_threshold` 是模型级过滤；流水线仍会用既有的 `min_relation_confidence`（默认 0.4）
-做二次过滤，两者职责不同——前者控制模型输出，后者控制进入时间线的关系质量。
+做二次过滤，两者职责不同——前者控制模型输出（开放词汇关系推理置信度普遍偏低，默认 0.1 只滤噪声），
+后者控制进入时间线的关系质量。
 
 ## 依赖与分发
 
@@ -126,11 +127,26 @@ uv run avc run --input tests/fixtures/sample_detection.png --reasoner relate-any
 
 | 设备 | 权重 | device | 素材 | 目标数 | 单帧延迟(min/mean/max, s) | CPU/内存峰值 | 关系数量/质量备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| MacBook Air (macOS) | relsgg-vits16plus | cpu | sample_detection.png | 待填写 | 待填写 | 待填写 | 待填写 |
+| MacBook Air (macOS) | relsgg-vits16plus | cpu | sample_detection.png（1024x768，真实场景） | 3（Mock 固定区域） | 0.466 / 0.495 / 0.495 | 未采集 | 检出 3 个关系：holding 0.31、near 0.19、near 0.14；正确识别 person-holding-phone |
 | Windows 10 一体机（待填写） | relsgg-vits16plus | cpu | sample_detection.png | 待填写 | 待填写 | 待填写 | 待填写 |
 
 质量评估口径：人工核对固定素材上的关系三元组是否覆盖 looking_at/facing/holding/pointing_at/touching/near，
 记录漏检、误检与置信度分布，作为是否进入真实摄像头阶段（PoC-5）的依据。
+
+### 首轮真机验证结论
+
+已在 macOS 开发机（MacBook Air，`device=cpu`）实测，命令为
+`uv run python examples/run_relate_anything.py`（使用 Mock 固定目标区域，ultralytics 未安装）：
+
+- 模型从 HuggingFace 加载权重约 96s（首次），后续帧无下载开销；
+- 单帧 CPU 推理约 0.47–0.50s（3 个目标区域、6 个关系词）；
+- 正确识别 `person --holding--> phone`（conf=0.31），符合 sample_detection.png 的实际内容；
+- `person --near--> screen`（0.19）和 `screen --near--> person`（0.14）也合理；
+- `looking_at`、`facing`、`pointing_at`、`touching` 未过阈值（均 < 0.1），
+  可能因 Mock 目标区域与真实人体/屏幕位置偏差较大，待接入 YOLO-World 真实检测框后复测；
+- 整体置信度偏低（最高 0.31），开放词汇关系推理在 CPU 小模型上属正常表现，
+  流水线级 `min_relation_confidence`（默认 0.4）需根据实测分布调低或保持，
+  建议 PoC-5 摄像头阶段结合真实检测框重新标定阈值。
 
 ## 边界约束（务必遵守）
 
