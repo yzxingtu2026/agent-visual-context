@@ -14,6 +14,16 @@ dependencies = [
 vision = [
     "opencv-python>=4.10",
 ]
+# YOLO-World 目标检测适配器（PoC-3）。ultralytics 会引入 torch 等重依赖，
+# 且许可证为 AGPL-3.0；默认不安装，需联网下载权重，商用前须完成合规确认。
+# clip 是 YOLO-World 文本编码器依赖（ultralytics 的 CLIP 分支），ultralytics 不会自动
+# 声明它，且在 uv 管理的无 pip 环境里无法自动安装，故在此显式声明。
+# 详见 docs/research/yolo-world.md。
+yolo-world = [
+    "ultralytics>=8.2",
+    "opencv-python>=4.10",
+    "clip @ git+https://github.com/ultralytics/CLIP.git",
+]
 
 [project.scripts]
 avc = "agent_visual_context.cli:main"
@@ -30,6 +40,10 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+# yolo-world extra 使用 git 直接引用（ultralytics 的 CLIP 分支），hatchling 需显式放行。
+allow-direct-references = true
 
 [tool.hatch.version]
 path = "src/agent_visual_context/__init__.py"

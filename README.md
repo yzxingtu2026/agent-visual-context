@@ -121,6 +121,7 @@ get_turn_context(turn_id)             获取某个语音话轮的视觉快照
 - [x] 建立 Python 项目骨架、核心抽象接口、测试基线与最小 CLI（Issue #9）；
 - [x] 用 Mock 检测/关系结果跑通视觉时间线（Issue #4）；
 - [x] 完成图片/短视频最小闭环：统一帧输入 -> Mock 检测/关系 -> 时间线（Issue #5）；
+- [x] 接入 YOLO-World 目标检测适配器：可配置类别/阈值/设备，模型不可用时降级（Issue #6）；
 - [ ] 在目标 Windows 10 一体机上验证性能与资源隔离；
 - [ ] 设计视觉观察数据模型和 Agent API；
 - [ ] 实现主动迎宾候选事件与冷却状态机；
@@ -134,8 +135,9 @@ get_turn_context(turn_id)             获取某个语音话轮的视觉快照
 ### 环境准备
 
 ```bash
-uv sync                  # 创建 .venv，安装项目与开发依赖（pytest / ruff / mypy / opencv）
-uv sync --extra vision   # 运行环境需要 OpenCV 图片/视频输入时安装
+uv sync                     # 创建 .venv，安装项目与开发依赖（pytest / ruff / mypy / opencv）
+uv sync --extra vision      # 运行环境需要 OpenCV 图片/视频输入时安装
+uv sync --extra yolo-world  # 需要真实 YOLO-World 检测时安装（引入 torch 等重依赖，AGPL-3.0，需联网下载权重）
 ```
 
 ### 验证基线
@@ -169,16 +171,33 @@ uv run python examples/run_offline_pipeline.py                  # 示例：图�
 uv run python examples/run_offline_pipeline.py path/to/video.mp4
 ```
 
-固定测试素材位于 `tests/fixtures/`（320x240 PNG 与 2s/10fps MP4），集成测试不依赖摄像头、
-GPU 或网络模型下载。视频帧时间戳按 `start + 原始帧号 / 源帧率` 统一映射，默认以“素材末帧
-即打开时刻”锚定回放，保证离线素材落入时间线窗口。
+固定测试素材位于 `tests/fixtures/`：`sample_image.png`（320x240 合成 PNG）与 `sample_video.mp4`
+（2s/10fps MP4）用于验证接线与降级；`sample_detection.png`（1024x768 真实场景图，含 person/hand/phone/screen）
+用于人工核对 YOLO-World 真实检测质量。集成测试不依赖摄像头、GPU 或网络模型下载。视频帧时间戳按
+`start + 原始帧号 / 源帧率` 统一映射，默认以“素材末帧即打开时刻”锚定回放，保证离线素材落入时间线窗口。
+
+### 运行 YOLO-World 真实检测（可选）
+
+安装 `yolo-world` extra 并联网下载权重后，`avc run --detector yolo-world` 会把离线素材交给真实
+YOLO-World 适配器检测，输出统一 `Detection` 并进入同一套时间线；跟踪与关系推理仍为 Mock：
+
+```bash
+uv sync --extra yolo-world
+uv run avc run --input tests/fixtures/sample_image.png --detector yolo-world --json
+uv run python examples/run_yolo_world_detection.py    # 逐帧打印检测框/类别/置信度/耗时与统计
+```
+
+目标类别、置信度阈值、输入尺寸、推理设备与超时均可配置（`AVC_DETECTOR_*`）；模型不可用或推理
+失败时流水线降级为“该帧无检测”而不崩溃。模型版本、权重来源、许可证（AGPL-3.0/GPL-3.0，商用前
+须完成合规确认）与真机基准口径见 [docs/research/yolo-world.md](docs/research/yolo-world.md)。
 
 常用环境变量统一使用前缀 `AVC_`，例如 `AVC_SCENE_ID`、`AVC_SOURCE_ID`、`AVC_MAX_FRAMES`、
-`AVC_TARGET_FPS`、`AVC_OBSERVATION_TTL_SECONDS`、`AVC_WINDOW_SECONDS`、`AVC_LOG_LEVEL`、`AVC_FAIL_FAST`。
+`AVC_TARGET_FPS`、`AVC_OBSERVATION_TTL_SECONDS`、`AVC_WINDOW_SECONDS`、`AVC_LOG_LEVEL`、`AVC_FAIL_FAST`，
+以及检测器相关的 `AVC_DETECTOR_BACKEND`、`AVC_DETECTOR_CLASSES`、`AVC_DETECTOR_DEVICE` 等。
 
-当前 PoC 不包含真实模型与摄像头：输入已支持离线图片/视频文件（Issue #5），但检测、跟踪与
-关系推理仍由 Mock 组件提供，用于验证模块边界、时间线约束与降级机制；真实模型适配器分别在
-Issue #6、#7、#8 中接入。
+当前 PoC 尚未接入摄像头：输入支持离线图片/视频文件（Issue #5），目标检测已可选接入真实
+YOLO-World 适配器（Issue #6，默认仍为 Mock），跟踪与关系推理仍由 Mock 组件提供，用于验证模块
+边界、时间线约束与降级机制；真实跟踪与关系推理适配器分别在 Issue #7、#8 中接入。
 
 ### 架构与边界
 
@@ -188,6 +207,8 @@ Issue #6、#7、#8 中接入。
 ## 合规与许可证
 
 本项目会分别核查源代码、模型权重、训练数据、检测器、运行时依赖和分发方式的许可证。RelateAnything 当前仓库代码采用 AGPL-3.0-only，其模型权重、数据集和第三方检测组件可能具有独立条款；“YOLO-World”名称本身也不足以确定具体实现和权利义务。
+
+PoC-3 接入的 YOLO-World 适配器经 Ultralytics 运行时（AGPL-3.0，或商业 Enterprise 授权）加载 `yolov8s-worldv2.pt` 权重，原始 YOLO-World 代码为 GPL-3.0；`ultralytics` 作为可选 extra 提供、权重不入仓库。在完成合规确认前，不将 ultralytics、YOLO-World 代码或权重打入商业发布包。详见 [docs/research/yolo-world.md](docs/research/yolo-world.md)。
 
 在许可证结论完成前，不将模型、权重或相关依赖承诺为可直接用于商业交付的默认组件。正式发布时将提供完整的第三方声明、来源链接和适用的源代码/署名信息。
 

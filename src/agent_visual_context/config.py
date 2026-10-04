@@ -37,6 +37,23 @@ class AppConfig(BaseSettings):
     min_relation_confidence: float = Field(default=0.4, ge=0, le=1)
     greeting_cooldown_seconds: float = Field(default=30.0, ge=0)
 
+    # 目标检测器（PoC-3：YOLO-World 适配器）
+    # backend=mock 时使用 StaticSceneDetector；backend=yolo-world 时装配真实适配器。
+    detector_backend: str = "mock"
+    # 首批开放词汇目标类别，覆盖 person/hand/phone/screen(menu-area) 验证路径。
+    detector_classes: list[str] = Field(
+        default_factory=lambda: ["person", "hand", "phone", "screen"]
+    )
+    # 模型级置信度阈值：开放词汇检测置信度普遍偏低，默认取值较小，
+    # 流水线仍会用 min_detection_confidence 做二次过滤。
+    detector_conf_threshold: float = Field(default=0.05, ge=0, le=1)
+    detector_iou_threshold: float = Field(default=0.45, ge=0, le=1)
+    detector_imgsz: int = Field(default=640, ge=32)
+    detector_device: str = "cpu"
+    # 单帧推理超时；超时按可恢复异常降级，不中断流水线。
+    detector_timeout_seconds: float = Field(default=10.0, gt=0)
+    detector_weights: str = "yolov8s-worldv2.pt"
+
     # 运行与可观测性
     log_level: str = "INFO"
     fail_fast: bool = False
@@ -50,6 +67,34 @@ class AppConfig(BaseSettings):
             msg = f"log_level 必须是 {sorted(allowed)} 之一，收到 {value!r}"
             raise ConfigurationError(msg)
         return normalized
+
+    @field_validator("detector_backend")
+    @classmethod
+    def _validate_detector_backend(cls, value: str) -> str:
+        allowed = {"mock", "yolo-world"}
+        normalized = value.strip().lower()
+        if normalized not in allowed:
+            msg = f"detector_backend 必须是 {sorted(allowed)} 之一，收到 {value!r}"
+            raise ConfigurationError(msg)
+        return normalized
+
+    @field_validator("detector_device")
+    @classmethod
+    def _validate_detector_device(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            msg = "detector_device 不能为空（例如 cpu、cuda、cuda:0、mps）"
+            raise ConfigurationError(msg)
+        return normalized
+
+    @field_validator("detector_classes")
+    @classmethod
+    def _validate_detector_classes(cls, value: list[str]) -> list[str]:
+        cleaned = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+        if not cleaned:
+            msg = "detector_classes 至少需要一个非空目标类别"
+            raise ConfigurationError(msg)
+        return cleaned
 
 
 def load_config(**overrides: object) -> AppConfig:

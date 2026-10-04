@@ -53,6 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="离线素材路径：图片文件、图片目录或视频文件；缺省使用合成帧",
     )
+    run.add_argument(
+        "--detector",
+        choices=["mock", "yolo-world"],
+        default=None,
+        help="目标检测器后端，默认 mock；yolo-world 需 `uv sync --extra yolo-world`",
+    )
     run.add_argument("--frames", type=int, default=None, help="处理帧数，默认取配置 max_frames")
     run.add_argument("--json", action="store_true", help="以 JSON 输出场景摘要")
 
@@ -74,6 +80,7 @@ def _config_from_args(args: argparse.Namespace) -> AppConfig:
         target_fps=args.fps,
         frame_width=args.width,
         frame_height=args.height,
+        detector_backend=getattr(args, "detector", None),
         log_level=args.log_level,
     )
 

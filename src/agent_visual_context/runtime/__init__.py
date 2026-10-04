@@ -6,6 +6,7 @@ from .bus import EventBus, EventListener
 from .factory import (
     DEFAULT_RELATION_RULES,
     DEFAULT_TARGETS,
+    build_detector,
     build_mock_pipeline,
     build_offline_pipeline,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "PipelineState",
     "PipelineStatus",
     "RunResult",
+    "build_detector",
     "build_mock_pipeline",
     "build_offline_pipeline",
 ]

@@ -44,3 +44,38 @@ def test_invalid_log_level_raises_configuration_error() -> None:
 def test_invalid_value_raises_configuration_error() -> None:
     with pytest.raises(ConfigurationError):
         load_config(target_fps=0)
+
+
+def test_detector_defaults_cover_first_batch_classes() -> None:
+    config = AppConfig()
+
+    assert config.detector_backend == "mock"
+    assert {"person", "hand", "phone", "screen"} <= set(config.detector_classes)
+    assert 0 <= config.detector_conf_threshold <= 1
+    assert config.detector_imgsz >= 32
+    assert config.detector_device == "cpu"
+    assert config.detector_timeout_seconds > 0
+
+
+def test_detector_backend_normalized_and_validated() -> None:
+    assert load_config(detector_backend="YOLO-World").detector_backend == "yolo-world"
+    with pytest.raises(ConfigurationError):
+        load_config(detector_backend="yolo-v9")
+
+
+def test_detector_classes_from_env_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AVC_DETECTOR_CLASSES", '["person", "cup"]')
+
+    config = AppConfig()
+
+    assert config.detector_classes == ["person", "cup"]
+
+
+def test_empty_detector_classes_rejected() -> None:
+    with pytest.raises(ConfigurationError):
+        load_config(detector_classes=[])
+
+
+def test_empty_detector_device_rejected() -> None:
+    with pytest.raises(ConfigurationError):
+        load_config(detector_device="   ")

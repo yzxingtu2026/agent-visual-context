@@ -10,7 +10,7 @@ from datetime import timedelta
 
 import pytest
 
-from agent_visual_context.domain import BBox, Detection, Relation, TrackedObject
+from agent_visual_context.domain import BBox, Detection, Frame, Relation, TrackedObject
 from agent_visual_context.errors import FrameSourceError
 from agent_visual_context.input import (
     ImageFrameSource,
@@ -28,6 +28,11 @@ from agent_visual_context.perception import (
     StaticSceneDetector,
 )
 from agent_visual_context.perception.base import Detector, RelationReasoner, Tracker
+from agent_visual_context.perception.yolo_world import (
+    RawDetection,
+    YoloWorldDetector,
+    YoloWorldSettings,
+)
 from tests.conftest import SAMPLE_IMAGE, SAMPLE_VIDEO, T0
 
 
@@ -161,3 +166,55 @@ def test_mock_reasoner_satisfies_relation_reasoner_protocol() -> None:
     assert len(relations) == 1
     assert relations[0].key == ("person-01", "looking_at", "screen-01")
     assert relations[0].observed_at == frame.captured_at
+
+
+class _StubBackend:
+    """契约测试用的最小后端，返回固定的原始检测框。"""
+
+    model_version = "yolo-world:stub"
+
+    def predict(self, image: object, **kwargs: object) -> list[RawDetection]:
+        return [
+            RawDetection(x1=80, y1=120, x2=200, y2=380, confidence=0.9, label="person"),
+            RawDetection(x1=300, y1=80, x2=580, y2=280, confidence=0.85, label="screen"),
+        ]
+
+
+def test_yolo_world_detector_satisfies_detector_protocol() -> None:
+    """真实适配器与 Mock 满足同一 `Detector` 协议，可直接替换。"""
+    detector: Detector = YoloWorldDetector(
+        YoloWorldSettings(classes=("person", "screen")), backend=_StubBackend()
+    )
+    # 合成帧 data=None，需给一帧带像素数据的帧
+    frame = Frame(
+        frame_id="stub-00000",
+        source_id="stub",
+        captured_at=T0,
+        width=640,
+        height=480,
+        data="PIXELS",
+    )
+
+    detections = detector.detect(frame)
+
+    assert [item.label for item in detections] == ["person", "screen"]
+    assert all(item.detected_at == frame.captured_at for item in detections)
+    assert all(item.model_version == "yolo-world:stub" for item in detections)
+
+
+def test_yolo_world_detector_feeds_mock_tracker_unchanged() -> None:
+    """检测器换成 YOLO-World 后，跟踪与时间线上层无需修改。"""
+    detector: Detector = YoloWorldDetector(backend=_StubBackend())
+    tracker: Tracker = MockTracker()
+    frame = Frame(
+        frame_id="stub-00000",
+        source_id="stub",
+        captured_at=T0,
+        width=640,
+        height=480,
+        data="PIXELS",
+    )
+
+    tracked: list[TrackedObject] = tracker.update(frame, detector.detect(frame))
+
+    assert [item.track_id for item in tracked] == ["person-01", "screen-01"]

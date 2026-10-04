@@ -10,6 +10,9 @@ CLAUDE.md
 .trae/
 .warp/
 
+# 图像生成脚本的临时产出目录（正式检测样本请移入 tests/fixtures/）
+vibe_images/
+
 .DS_Store
 __pycache__/
 *.py[cod]
@@ -26,3 +29,12 @@ dist/
 .mypy_cache/
 .ruff_cache/
 .coverage
+
+# 模型权重（YOLO-World / CLIP 等）：体积大且许可证受限，不入仓库，部署时单独分发。
+# 详见 docs/research/yolo-world.md。
+*.pt
+*.pth
+*.onnx
+*.engine
+*.torchscript
+/weights/
