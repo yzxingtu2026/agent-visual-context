@@ -3,7 +3,6 @@ const { parseProfileFromAgents, renderLocalEntries } = require("./local-entries"
 const { resolveOperator } = require("./operator");
 const { renderAll } = require("./render");
 const { normalizeNewlines } = require("./repo");
-const { findTeamMember } = require("./team");
 const { isLocalEntryTarget, renderableTargets } = require("./targets");
 
 // 计算目标集合对应的期望生成物（不含状态）。
@@ -56,7 +55,6 @@ function resolveOperatorStatus(repo, options) {
       githubUsername: parsed.githubUsername,
       githubEmail: parsed.githubEmail,
       role: parsed.role,
-      matchedMember: Boolean(findTeamMember(repo, parsed)),
       missingFields: [],
       profile: parsed,
     };
@@ -70,7 +68,6 @@ function resolveOperatorStatus(repo, options) {
     githubUsername: resolved.profile.githubUsername,
     githubEmail: resolved.profile.githubEmail,
     role: resolved.profile.role,
-    matchedMember: resolved.matchedMember,
     missingFields: resolved.missingFields,
     sources: resolved.sources,
     profile: resolved.missingFields.length === 0 ? resolved.profile : null,

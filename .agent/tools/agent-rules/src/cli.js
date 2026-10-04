@@ -5,7 +5,6 @@ const { CliError, logError, setJsonMode } = require("./output");
 const { errorResult, report } = require("./report");
 const { createRepo, ensureAgentWorkspace, findRepoRoot } = require("./repo");
 const { resolveTargets } = require("./targets");
-const { validateSources } = require("./validate");
 
 // status/ensure 未指定目标且无既有生成物时，以通用入口 codex(AGENTS.md) 为默认基线。
 const DEFAULT_ENSURE_TARGETS = new Set(["codex"]);
@@ -24,7 +23,6 @@ async function runCli(argv) {
   try {
     const repo = createRepo(repoRoot);
     ensureAgentWorkspace(repo);
-    validateSources(repo);
 
     const result = await dispatch(command, repo, options);
     return report(command, result);
