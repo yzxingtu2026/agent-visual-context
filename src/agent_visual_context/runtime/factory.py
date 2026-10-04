@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from ..config import AppConfig
 from ..context import SceneSummarizer
 from ..domain import BBox, utc_now
-from ..input import ScriptedFrameSource, synthetic_frames
+from ..input import ScriptedFrameSource, frame_source_from_path, synthetic_frames
 from ..input.base import FrameSource
 from ..perception import (
     MockRelationReasoner,
@@ -98,4 +99,42 @@ def build_mock_pipeline(
         ),
         bus=bus,
         clock=clock,
+    )
+
+
+def build_offline_pipeline(
+    config: AppConfig,
+    path: Path | str,
+    *,
+    clock: Callable[[], datetime] = utc_now,
+    source_id: str | None = None,
+    detector: Detector | None = None,
+    tracker: Tracker | None = None,
+    reasoner: RelationReasoner | None = None,
+    policies: Sequence[Policy] | None = None,
+    bus: EventBus | None = None,
+    targets: Sequence[MockTarget] = DEFAULT_TARGETS,
+    relation_rules: Sequence[RelationRule] = DEFAULT_RELATION_RULES,
+) -> Pipeline:
+    """构造以离线素材（图片/图片目录/视频）为输入的 Mock 流水线。
+
+    与 `build_mock_pipeline` 复用同一套领域模型、时间线与策略组件，
+    仅把输入源替换为真实文件适配器；感知组件仍为 Mock（PoC-3/PoC-4 接入真实模型）。
+    `source_id` 未显式给出时取素材文件/目录名，并同步回配置。
+    """
+    source = frame_source_from_path(
+        path, source_id=source_id, target_fps=config.target_fps, clock=clock
+    )
+    resolved_config = config.model_copy(update={"source_id": source.source_id})
+    return build_mock_pipeline(
+        resolved_config,
+        clock=clock,
+        source=source,
+        detector=detector,
+        tracker=tracker,
+        reasoner=reasoner,
+        policies=policies,
+        bus=bus,
+        targets=targets,
+        relation_rules=relation_rules,
     )

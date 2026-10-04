@@ -2,7 +2,8 @@
 
 本文记录 `agent-visual-context` 的目录结构、模块职责、依赖方向与降级原则，是后续所有检测器、
 关系推理器和输入源接入时必须遵守的边界约定。对应 Issue #9（PoC-0 项目骨架），
-关系生命周期与两类快照服务在 Issue #4（PoC-1 Mock 视觉时间线）中补充。
+关系生命周期与两类快照服务在 Issue #4（PoC-1 Mock 视觉时间线）中补充，
+离线图片/视频输入适配在 Issue #5（PoC-2）中补充。
 
 ## 目录结构
 
@@ -22,6 +23,7 @@ src/agent_visual_context/
 └── cli.py        # `avc` 命令行入口
 
 tests/
+├── fixtures/     # 固定离线素材（一张 PNG 图片与一段 2s MP4 短视频）
 ├── unit/         # 领域模型、时间线、去抖、配置等纯逻辑测试
 ├── contract/     # 组件协议契约测试：Mock 与真实适配器都必须满足
 └── integration/  # 流水线端到端、API 查询、CLI 行为
@@ -57,13 +59,32 @@ cli / api  ->  runtime  ->  context / policies / temporal  ->  perception / inpu
 
 | 组件 | 协议位置 | Mock 实现 | 真实实现（后续） |
 | --- | --- | --- | --- |
-| 输入源 | `input/base.py::FrameSource` | `ScriptedFrameSource` | 图片/视频/摄像头适配器（PoC-2、PoC-5） |
+| 输入源 | `input/base.py::FrameSource` | `ScriptedFrameSource` | `ImageFrameSource`、`VideoFrameSource`（PoC-2 已落地）；摄像头适配器（PoC-5） |
 | 目标检测 | `perception/base.py::Detector` | `StaticSceneDetector`、`ScriptedDetector` | YOLO-World 适配器（PoC-3） |
 | 目标跟踪 | `perception/base.py::Tracker` | `MockTracker` | IoU/外观匹配跟踪器（PoC-3） |
 | 关系推理 | `perception/base.py::RelationReasoner` | `MockRelationReasoner` | RelateAnything 适配器（PoC-4） |
 | 策略 | `policies/base.py::Policy` | `GreetingCandidatePolicy` | 迎宾状态机与冷却策略 |
 
 `tests/contract/` 中的契约测试以协议类型标注函数签名，任何新适配器都应当能直接替换 Mock 通过同一组测试。
+
+### 离线素材输入（PoC-2）
+
+图片与视频适配器统一遵守以下约定，摄像头适配器（PoC-5）接入时应当复用同一套语义：
+
+- **装配**：CLI、示例与测试通过 `input/loader.py::frame_source_from_path()` 把素材路径
+  （单张图片、图片目录或视频文件）转换为 `FrameSource`，再用
+  `runtime/factory.py::build_offline_pipeline()` 注入流水线；不要在业务代码中直接实例化适配器。
+- **编号与时间戳**：`frame_id = "{source_id}-{原始帧编号:05d}"`；视频帧
+  `captured_at = start + 原始帧号 / 源帧率`，图片序列按 `1 / target_fps` 等间隔推进。
+- **锚定**：未显式给定 `start` 时，以“素材末帧即打开时刻”锚定回放（与合成帧一致），
+  保证离线素材落入默认时间窗口。
+- **采样**：`input/sampling.py::plan_sampling()` 是抽帧的唯一口径：源帧率高于 `target_fps`
+  时等间隔取整（首帧必选、编号不重复），否则逐帧全选；视频按原始帧号顺序读取并跳过未采样帧，
+  不使用 seek，避免不同编码的兼容性问题。
+- **依赖隔离**：OpenCV 通过 `input/_opencv.py::require_cv2()` 惰性加载，包导入不强制依赖
+  cv2；numpy 像素数组放入 `Frame.data`（`RawFrameData`），OpenCV 类型不得进入 `domain/`。
+- **降级**：素材不存在、目录无图片、解码失败与空视频在 `open()`/`read()` 抛出
+  `FrameSourceError`；流水线将输入源读取失败降级为“无帧”并记录组件状态，`fail_fast` 时上抛。
 
 ## 数据分型
 

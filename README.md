@@ -119,7 +119,8 @@ get_turn_context(turn_id)             获取某个语音话轮的视觉快照
 - [x] 从 `agent-project-skeleton` 模板初始化项目；
 - [x] 确立与阿国饭店大屏 Issue #446 的首个应用关系；
 - [x] 建立 Python 项目骨架、核心抽象接口、测试基线与最小 CLI（Issue #9）；
-- [ ] 完成图片/短视频最小闭环：检测框 -> 关系 -> 时间线；
+- [x] 用 Mock 检测/关系结果跑通视觉时间线（Issue #4）；
+- [x] 完成图片/短视频最小闭环：统一帧输入 -> Mock 检测/关系 -> 时间线（Issue #5）；
 - [ ] 在目标 Windows 10 一体机上验证性能与资源隔离；
 - [ ] 设计视觉观察数据模型和 Agent API；
 - [ ] 实现主动迎宾候选事件与冷却状态机；
@@ -133,8 +134,8 @@ get_turn_context(turn_id)             获取某个语音话轮的视觉快照
 ### 环境准备
 
 ```bash
-uv sync                  # 创建 .venv，安装项目与开发依赖（pytest / ruff / mypy）
-uv sync --extra vision   # 需要 OpenCV 输入适配时再安装（PoC-2 起使用）
+uv sync                  # 创建 .venv，安装项目与开发依赖（pytest / ruff / mypy / opencv）
+uv sync --extra vision   # 运行环境需要 OpenCV 图片/视频输入时安装
 ```
 
 ### 验证基线
@@ -156,11 +157,28 @@ uv run avc run --frames 6 --json              # 输出可注入话轮上下文�
 uv run python examples/run_mock_pipeline.py   # 示例：组件注入、事件订阅与快照输出
 ```
 
+### 运行离线图片/视频 PoC
+
+`avc run --input` 支持单张图片、图片目录或视频文件（需安装 `vision` extra），
+检测/跟踪/关系推理仍为 Mock 组件，输出与合成帧完全同构：
+
+```bash
+uv run avc run --input tests/fixtures/sample_image.png --json   # 单张图片 -> 1 帧闭环
+uv run avc run --input tests/fixtures/sample_video.mp4 --json   # 2 秒视频按 --fps 采样
+uv run python examples/run_offline_pipeline.py                  # 示例：图片与视频跑通同一套时间线
+uv run python examples/run_offline_pipeline.py path/to/video.mp4
+```
+
+固定测试素材位于 `tests/fixtures/`（320x240 PNG 与 2s/10fps MP4），集成测试不依赖摄像头、
+GPU 或网络模型下载。视频帧时间戳按 `start + 原始帧号 / 源帧率` 统一映射，默认以“素材末帧
+即打开时刻”锚定回放，保证离线素材落入时间线窗口。
+
 常用环境变量统一使用前缀 `AVC_`，例如 `AVC_SCENE_ID`、`AVC_SOURCE_ID`、`AVC_MAX_FRAMES`、
 `AVC_TARGET_FPS`、`AVC_OBSERVATION_TTL_SECONDS`、`AVC_WINDOW_SECONDS`、`AVC_LOG_LEVEL`、`AVC_FAIL_FAST`。
 
-当前骨架不包含真实模型与摄像头：检测、跟踪与关系推理均由 Mock 组件提供，用于验证模块边界、
-时间线约束与降级机制；真实适配器分别在 Issue #6、#7、#8 中接入。
+当前 PoC 不包含真实模型与摄像头：输入已支持离线图片/视频文件（Issue #5），但检测、跟踪与
+关系推理仍由 Mock 组件提供，用于验证模块边界、时间线约束与降级机制；真实模型适配器分别在
+Issue #6、#7、#8 中接入。
 
 ### 架构与边界
 

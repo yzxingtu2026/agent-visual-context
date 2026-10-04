@@ -12,7 +12,12 @@ import pytest
 
 from agent_visual_context.domain import BBox, Detection, Relation, TrackedObject
 from agent_visual_context.errors import FrameSourceError
-from agent_visual_context.input import ScriptedFrameSource, synthetic_frames
+from agent_visual_context.input import (
+    ImageFrameSource,
+    ScriptedFrameSource,
+    VideoFrameSource,
+    synthetic_frames,
+)
 from agent_visual_context.input.base import FrameSource
 from agent_visual_context.perception import (
     MockRelationReasoner,
@@ -23,7 +28,7 @@ from agent_visual_context.perception import (
     StaticSceneDetector,
 )
 from agent_visual_context.perception.base import Detector, RelationReasoner, Tracker
-from tests.conftest import T0
+from tests.conftest import SAMPLE_IMAGE, SAMPLE_VIDEO, T0
 
 
 def consume_source(source: FrameSource) -> list[str]:
@@ -60,6 +65,23 @@ def test_source_close_is_idempotent() -> None:
 
     assert source.close_count == 1
     assert not source.is_open
+
+
+def test_image_source_satisfies_frame_source_protocol() -> None:
+    source: FrameSource = ImageFrameSource([SAMPLE_IMAGE], start=T0)
+
+    assert consume_source(source) == ["sample_image-00000"]
+
+
+def test_video_source_satisfies_frame_source_protocol() -> None:
+    source: FrameSource = VideoFrameSource(SAMPLE_VIDEO, target_fps=2.0, start=T0)
+
+    assert consume_source(source) == [
+        "sample_video-00000",
+        "sample_video-00005",
+        "sample_video-00010",
+        "sample_video-00015",
+    ]
 
 
 def test_static_detector_satisfies_detector_protocol() -> None:

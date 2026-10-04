@@ -21,7 +21,13 @@ from .api import VisualContextApi
 from .config import AppConfig, load_config
 from .errors import AgentVisualContextError
 from .logging_setup import configure_logging, get_logger
-from .runtime import ComponentState, PipelineState, RunResult, build_mock_pipeline
+from .runtime import (
+    ComponentState,
+    PipelineState,
+    RunResult,
+    build_mock_pipeline,
+    build_offline_pipeline,
+)
 
 logger = get_logger("cli")
 
@@ -40,8 +46,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_args(health)
     health.add_argument("--frames", type=int, default=4, help="健康检查使用的帧数，默认 4")
 
-    run = subparsers.add_parser("run", help="以合成帧运行 Mock 流水线")
+    run = subparsers.add_parser("run", help="以合成帧或离线图片/视频素材运行 Mock 流水线")
     _add_common_args(run)
+    run.add_argument(
+        "--input",
+        default=None,
+        help="离线素材路径：图片文件、图片目录或视频文件；缺省使用合成帧",
+    )
     run.add_argument("--frames", type=int, default=None, help="处理帧数，默认取配置 max_frames")
     run.add_argument("--json", action="store_true", help="以 JSON 输出场景摘要")
 
@@ -81,7 +92,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.command == "healthcheck":
             return _cmd_healthcheck(config, frames=args.frames)
-        return _cmd_run(config, frames=args.frames, as_json=args.json)
+        return _cmd_run(config, frames=args.frames, as_json=args.json, input_path=args.input)
     except AgentVisualContextError as exc:
         print(f"错误：{exc}", file=sys.stderr)
         return 2
@@ -125,11 +136,16 @@ def _cmd_healthcheck(config: AppConfig, *, frames: int) -> int:
     return 0
 
 
-def _cmd_run(config: AppConfig, *, frames: int | None, as_json: bool) -> int:
+def _cmd_run(
+    config: AppConfig, *, frames: int | None, as_json: bool, input_path: str | None
+) -> int:
     effective_config = (
         config if frames is None else config.model_copy(update={"max_frames": frames})
     )
-    pipeline = build_mock_pipeline(effective_config)
+    if input_path is not None:
+        pipeline = build_offline_pipeline(effective_config, input_path)
+    else:
+        pipeline = build_mock_pipeline(effective_config)
     api = VisualContextApi.from_pipeline(pipeline)
     result = pipeline.run(max_frames=frames)
     snapshot = api.get_scene_snapshot(now=_snapshot_moment(result))
