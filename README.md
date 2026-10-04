@@ -1,41 +1,139 @@
-# Agent Project Skeleton
+# 面向 Agent 的实时视觉关系上下文处理器
 
-通用 Agent 协作项目骨架，适合新项目初始化时复用 Issue/PR、分支、文档归档、公共规范沉淀与开发硬约束。
+面向 Agent 的实时视觉关系上下文处理器，将摄像头画面转换为**带时间、置信度、有效期和来源的结构化视觉观察**，为现代 Agent 提供可查询、可订阅、可注入话轮的实时视觉上下文。
 
-## 使用方式
+本项目的首个真实应用场景是阿国饭店 AI 点菜大屏：利用本地摄像头低频观察顾客与大屏、手机、手部和交互区域之间的关系，实现视觉辅助主动迎宾，以及在语音点菜过程中提供连续的辅助观察上下文。详见阿国饭店项目 [Issue #446](https://github.com/yzxingtu2026/aguo-ai-dining/issues/446)。
 
-1. 从本仓库创建新项目：点击 GitHub 的 **Use this template**。
-2. 运行 `npx -y @yz-xingtu/agent-rules@latest init`，填写当前使用者姓名、GitHub 用户名和提交邮箱。
-3. 替换规则源中的占位符：项目名称、仓库地址、默认分支、团队沟通渠道、运行时目录、技术栈和开发硬约束。
-4. 按项目情况调整 `.agent/rules/`、`.agent/skills/`、`.agent/team/`，再运行 `npx -y @yz-xingtu/agent-rules@latest sync`。
-5. 查看本地生成的 `AGENTS.md` / `CLAUDE.md`，确认项目上下文和使用者信息。
-6. 新增通用封装、统一组件、公共工具或跨模块约定时，同步记录到规则源或 `docs/development/`。
-7. 如需 GitHub Issue/PR 企业微信实时通知，按 `docs/development/github-wecom-notify.md` 配置 Secret 后启用 `.github/notification.yml`。
+> 本项目输出的是视觉观察，不是用户指令、身份事实或业务事实。任何订单、支付、服务请求等业务动作都必须经过用户明确表达、Agent 安全策略和业务后端权威校验。
 
-## 目录
+## 为什么需要这个项目？
+
+单帧目标检测只能回答“画面里有什么”，而 Agent 往往还需要知道：
+
+- 谁正在看向或接近什么？
+- 谁拿着什么、指向什么或触摸什么？
+- 某个关系是否持续了几秒？
+- 最近一个语音话轮期间观察到了哪些变化？
+- 当前观察是否仍然有效，是否只是低置信度推断？
+
+本项目把模型推理结果加工成 Agent 可以安全使用的上下文：
 
 ```text
-.agent/rules/
-.agent/skills/
-.agent/team/
-.agent/adapters/
-.agent/templates/
-.agent/tools/agent-rules/
-docs/development/
-.github/ISSUE_TEMPLATE/
-.github/workflows/
-.github/scripts/
-.github/PULL_REQUEST_TEMPLATE.md
+摄像头
+  -> 目标检测/分割
+  -> 目标跟踪
+  -> 视觉关系推理
+  -> 跨帧去抖与关系持续性
+  -> 有界视觉事件时间线
+  -> 场景摘要 / 话轮快照
+  -> Agent 查询、订阅或上下文注入
 ```
 
-`.cursor/`、`.qoder/`、`.codex/`、`.claude/` 等厂商目录由 CLI 本地生成，已加入 `.gitignore`，不作为模板源提交。
+## 核心模型组合
 
-## 建议初始化
+首期计划采用：
 
-```bash
-npx -y @yz-xingtu/agent-rules@latest init --agents=codex,claude,cursor,qoder
-npx -y @yz-xingtu/agent-rules@latest sync
-git switch -c chore/initialize-project-rules
+- **YOLO-World 或其他可替换目标检测器**：发现人、手、手机、屏幕、物品等目标并提供目标框；分割模型可选，用于需要 mask 的场景。
+- **RelateAnything**：基于图像和目标区域预测开放词汇的目标关系，例如 `person -> holding -> phone`、`person -> looking at -> screen`。
+- **跟踪与上下文引擎**：为目标分配跨帧 track id，合并短时观察，处理置信度、TTL、去抖、场景和话轮边界。
+
+RelateAnything 主要负责视觉关系推理，并不替代目标检测、目标跟踪或 Agent 上下文处理。模型适配层会保持可替换，以便在不同设备、许可证和性能条件下切换检测器与推理后端。
+
+## 面向 Agent 的能力
+
+计划提供最小而稳定的通用接口：
+
+```text
+get_scene_snapshot()                 获取当前场景摘要
+get_observations(since, until)       查询时间窗口内的观察
+subscribe_events()                   订阅视觉事件
+get_turn_context(turn_id)             获取某个语音话轮的视觉快照
 ```
 
-`init` 会优先按 GitHub 用户名或提交邮箱匹配 `.agent/team/members.yml`，再从 `.agent/team/roles.yml` 写入对应角色说明。`AGENTS.md` 每次都会生成；`CLAUDE.md` 和厂商目录按 `--agents` 选择生成。后续运行 `sync` 会刷新 `AGENTS.md` 和已存在的 `CLAUDE.md`。这些本地文件包含个人身份和协作偏好，已放入 `.gitignore`，不要提交到仓库。
+每条观察应尽量包含：
+
+```json
+{
+  "scene_id": "scene-01",
+  "observed_at": "2026-10-04T12:00:01.200Z",
+  "expires_at": "2026-10-04T12:00:04.200Z",
+  "subject": {"track_id": "person-01", "label": "person"},
+  "predicate": "looking_at",
+  "object": {"track_id": "screen-01", "label": "screen"},
+  "confidence": 0.82,
+  "source": "local-camera",
+  "epistemic_status": "visual-observation"
+}
+```
+
+输出需要区分：
+
+1. **模型观察**：当前画面中检测到或推理出的目标与关系；
+2. **规则事件**：例如“持续停留超过 2 秒”“关系在最近 3 秒重复出现”；
+3. **用户明确表达**：由语音或触控确认的意图，不能被视觉观察覆盖。
+
+## 阿国饭店大屏首个应用
+
+### 视觉辅助主动迎宾
+
+```text
+检测到顾客
+  -> 顾客进入大屏交互区域
+  -> 持续停留并大致面向大屏
+  -> 满足阈值和冷却条件
+  -> 数字人主动打招呼
+  -> 顾客回应后进入正式双工语音点菜
+```
+
+视觉触发只负责提出主动迎宾候选，不应因顾客路过或短暂停留反复播报，也不应在已有语音会话、维护页或不适合打扰的页面中触发。
+
+### 长期辅助观察上下文
+
+在语音倾听和点菜过程中，处理器以低频方式维护最近时间窗口，例如：
+
+```text
+最近 4 秒观察到：
+- 2 位顾客持续位于大屏交互区域；
+- 其中 1 位面向菜单区域；
+- 检测到 1 部手机；
+- 未检测到明确指向某个菜品的动作。
+```
+
+提交语音话轮时，只发送经过截断、去重和 TTL 过滤的视觉快照，不发送无界原始视频或完整逐帧结果。
+
+## 设计原则
+
+- **本地优先**：摄像头画面默认在设备本地处理，减少不必要的视频上传。
+- **低频优先**：面向普通 CPU 设备，优先验证 640p、1–2 FPS 关系推理，再按设备能力调节。
+- **模型可替换**：检测器、跟踪器、关系推理后端和设备执行提供方通过适配层解耦。
+- **观察不等于事实**：任何视觉结果都带来源、置信度和有效期，不能伪装成用户确认或后端事实。
+- **语音优先**：用户明确说出的内容优先于视觉估计；视觉只作为辅助上下文。
+- **业务后端权威**：视觉观察不得直接执行下单、加菜、催菜、呼叫服务或其他业务写操作。
+- **资源隔离**：视觉推理异常、超时或退出时，不得阻塞大屏渲染、麦克风采集、语音 WebSocket 和 TTS 播放。
+- **可观测可回放**：记录模型版本、推理延迟、丢帧、置信度和事件生命周期，支持现场问题复盘。
+
+## 项目阶段
+
+当前处于项目启动与技术方案阶段：
+
+- [x] 从 `agent-project-skeleton` 模板初始化项目；
+- [x] 确立与阿国饭店大屏 Issue #446 的首个应用关系；
+- [ ] 完成图片/短视频最小闭环：检测框 -> 关系 -> 时间线；
+- [ ] 在目标 Windows 10 一体机上验证性能与资源隔离；
+- [ ] 设计视觉观察数据模型和 Agent API；
+- [ ] 实现主动迎宾候选事件与冷却状态机；
+- [ ] 接入阿国饭店双工语音上下文；
+- [ ] 发布可复用的 Agent Skills 适配包。
+
+## 合规与许可证
+
+本项目会分别核查源代码、模型权重、训练数据、检测器、运行时依赖和分发方式的许可证。RelateAnything 当前仓库代码采用 AGPL-3.0-only，其模型权重、数据集和第三方检测组件可能具有独立条款；“YOLO-World”名称本身也不足以确定具体实现和权利义务。
+
+在许可证结论完成前，不将模型、权重或相关依赖承诺为可直接用于商业交付的默认组件。正式发布时将提供完整的第三方声明、来源链接和适用的源代码/署名信息。
+
+## 关联项目
+
+- [阿国饭店 AI 点菜互动系统](https://github.com/yzxingtu2026/aguo-ai-dining)
+- [阿国饭店 Issue #446：引入 RelateAnything 实现主动迎宾唤醒与长期视觉辅助上下文](https://github.com/yzxingtu2026/aguo-ai-dining/issues/446)
+- [RelateAnything](https://github.com/Maelic/RelateAnything)
+- [agent-project-skeleton](https://github.com/yzxingtu2026/agent-project-skeleton)
