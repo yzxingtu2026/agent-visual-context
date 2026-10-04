@@ -5,12 +5,18 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
 from agent_visual_context.config import AppConfig
 
 T0 = datetime(2026, 10, 4, 12, 0, 0, tzinfo=UTC)
+
+# 固定离线素材：一张静态图片（320x240 PNG）与一段短视频（2s/10fps/20 帧 MP4）
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+SAMPLE_IMAGE = FIXTURES_DIR / "sample_image.png"
+SAMPLE_VIDEO = FIXTURES_DIR / "sample_video.mp4"
 
 
 class FakeClock:

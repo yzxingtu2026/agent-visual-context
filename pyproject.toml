@@ -23,6 +23,8 @@ dev = [
     "pytest>=8.2",
     "ruff>=0.6",
     "mypy>=1.11",
+    # PoC-2 起测试需要生成/读取真实图片与视频素材
+    "opencv-python>=4.10",
 ]
 
 [build-system]

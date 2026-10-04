@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from .bus import EventBus, EventListener
-from .factory import DEFAULT_RELATION_RULES, DEFAULT_TARGETS, build_mock_pipeline
+from .factory import (
+    DEFAULT_RELATION_RULES,
+    DEFAULT_TARGETS,
+    build_mock_pipeline,
+    build_offline_pipeline,
+)
 from .pipeline import FrameResult, Pipeline, RunResult
 from .status import ComponentHealth, ComponentState, PipelineState, PipelineStatus
 
@@ -20,4 +25,5 @@ __all__ = [
     "PipelineStatus",
     "RunResult",
     "build_mock_pipeline",
+    "build_offline_pipeline",
 ]
