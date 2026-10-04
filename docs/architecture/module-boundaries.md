@@ -3,7 +3,8 @@
 本文记录 `agent-visual-context` 的目录结构、模块职责、依赖方向与降级原则，是后续所有检测器、
 关系推理器和输入源接入时必须遵守的边界约定。对应 Issue #9（PoC-0 项目骨架），
 关系生命周期与两类快照服务在 Issue #4（PoC-1 Mock 视觉时间线）中补充，
-离线图片/视频输入适配在 Issue #5（PoC-2）中补充。
+离线图片/视频输入适配在 Issue #5（PoC-2）中补充，
+YOLO-World 目标检测适配器在 Issue #6（PoC-3）中补充。
 
 ## 目录结构
 
@@ -60,7 +61,7 @@ cli / api  ->  runtime  ->  context / policies / temporal  ->  perception / inpu
 | 组件 | 协议位置 | Mock 实现 | 真实实现（后续） |
 | --- | --- | --- | --- |
 | 输入源 | `input/base.py::FrameSource` | `ScriptedFrameSource` | `ImageFrameSource`、`VideoFrameSource`（PoC-2 已落地）；摄像头适配器（PoC-5） |
-| 目标检测 | `perception/base.py::Detector` | `StaticSceneDetector`、`ScriptedDetector` | YOLO-World 适配器（PoC-3） |
+| 目标检测 | `perception/base.py::Detector` | `StaticSceneDetector`、`ScriptedDetector` | `YoloWorldDetector`（PoC-3 已落地，`perception/yolo_world.py`） |
 | 目标跟踪 | `perception/base.py::Tracker` | `MockTracker` | IoU/外观匹配跟踪器（PoC-3） |
 | 关系推理 | `perception/base.py::RelationReasoner` | `MockRelationReasoner` | RelateAnything 适配器（PoC-4） |
 | 策略 | `policies/base.py::Policy` | `GreetingCandidatePolicy` | 迎宾状态机与冷却策略 |
@@ -85,6 +86,29 @@ cli / api  ->  runtime  ->  context / policies / temporal  ->  perception / inpu
   cv2；numpy 像素数组放入 `Frame.data`（`RawFrameData`），OpenCV 类型不得进入 `domain/`。
 - **降级**：素材不存在、目录无图片、解码失败与空视频在 `open()`/`read()` 抛出
   `FrameSourceError`；流水线将输入源读取失败降级为“无帧”并记录组件状态，`fail_fast` 时上抛。
+
+### YOLO-World 目标检测（PoC-3）
+
+真实检测器与 Mock 满足同一 `Detector` 协议，接入时遵守以下约定（详见 `docs/research/yolo-world.md`）：
+
+- **落点唯一**：模型调用只能出现在 `perception/yolo_world.py`（及惰性加载器
+  `perception/_ultralytics.py`）；**不得**写入 `domain/`、`temporal/`、`context/`。
+- **装配**：`runtime/factory.py::build_detector(config)` 按 `detector_backend` 装配
+  （`mock` -> `StaticSceneDetector`，`yolo-world` -> `YoloWorldDetector.from_config`）；
+  `build_mock_pipeline`/`build_offline_pipeline` 在未显式注入 `detector` 时调用它。
+  CLI `run --detector yolo-world` 走同一路径。
+- **可插拔后端**：`YoloWorldDetector` 通过 `backend`/`backend_factory` 注入推理后端，
+  真实实现 `UltralyticsYoloWorldBackend` 惰性加载 ultralytics；测试注入假后端即可离线验证，
+  无需安装 torch 或联网下载权重。
+- **依赖隔离**：ultralytics 通过 `perception/_ultralytics.py::require_ultralytics()` 惰性加载，
+  作为 `yolo-world` extra（AGPL-3.0），包导入不强制依赖；权重二进制不入仓库，部署时单独分发。
+- **归一化**：后端把模型张量转换为纯 Python 的 `RawDetection`，检测器再映射为领域 `Detection`
+  （bbox 裁剪到帧内、退化框丢弃、置信度过滤、时间戳取自当前帧、携带模型版本）；
+  torch/ultralytics 类型不得进入 `domain/`。
+- **降级**：模型初始化失败、推理异常、推理超时、缺少像素数据都抛 `PerceptionError`，
+  由流水线降级为“该帧无检测”并标记 `detector` 组件状态；空检测结果是正常空列表，不算失败。
+- **可观测**：每帧记录模型版本、推理耗时、输入尺寸、检测数量与类别分布（logger
+  `perception.yolo_world`），并累积到 `YoloWorldDetector.stats`。
 
 ## 数据分型
 

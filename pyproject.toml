@@ -14,6 +14,13 @@ dependencies = [
 vision = [
     "opencv-python>=4.10",
 ]
+# YOLO-World 目标检测适配器（PoC-3）。ultralytics 会引入 torch 等重依赖，
+# 且许可证为 AGPL-3.0；默认不安装，需联网下载权重，商用前须完成合规确认。
+# 详见 docs/research/yolo-world.md。
+yolo-world = [
+    "ultralytics>=8.2",
+    "opencv-python>=4.10",
+]
 
 [project.scripts]
 avc = "agent_visual_context.cli:main"

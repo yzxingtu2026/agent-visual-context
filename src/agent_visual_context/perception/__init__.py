@@ -11,15 +11,31 @@ from .mock import (
     ScriptedDetector,
     StaticSceneDetector,
 )
+from .yolo_world import (
+    DetectionMetrics,
+    DetectionStats,
+    RawDetection,
+    UltralyticsYoloWorldBackend,
+    YoloWorldBackend,
+    YoloWorldDetector,
+    YoloWorldSettings,
+)
 
 __all__ = [
+    "DetectionMetrics",
+    "DetectionStats",
     "Detector",
     "MockRelationReasoner",
     "MockTarget",
     "MockTracker",
+    "RawDetection",
     "RelationReasoner",
     "RelationRule",
     "ScriptedDetector",
     "StaticSceneDetector",
     "Tracker",
+    "UltralyticsYoloWorldBackend",
+    "YoloWorldBackend",
+    "YoloWorldDetector",
+    "YoloWorldSettings",
 ]
