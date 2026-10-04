@@ -40,18 +40,27 @@ person, hand, phone, screen
 
 ## 依赖与分发
 
-- **运行时依赖**：`ultralytics>=8.2`（会引入 `torch`、`torchvision`、`opencv-python` 等重依赖）。
-  作为可选 extra 提供，默认不安装，保持骨架环境轻量：
+- **运行时依赖**：`ultralytics>=8.2`（会引入 `torch`、`torchvision`、`opencv-python` 等重依赖），
+  以及 YOLO-World 文本编码器所需的 `clip`（ultralytics 的 CLIP 分支
+  `git+https://github.com/ultralytics/CLIP.git`）。作为可选 extra 提供，默认不安装，保持骨架环境轻量：
 
   ```bash
   uv sync --extra yolo-world
   ```
 
+  **注意 `clip` 依赖**：ultralytics **不会**在自己的依赖里声明 CLIP，运行时若缺失会尝试用 pip
+  自动安装；但 uv 创建的 `.venv` 默认没有 pip（`No module named pip`），自动安装会失败并报
+  `No module named 'clip'`。因此本 extra 显式声明了 `clip @ git+...`，并在 `pyproject.toml`
+  设置 `tool.hatch.metadata.allow-direct-references = true` 以放行 git 直接引用。
 - **惰性加载**：与 OpenCV 一致，`perception/_ultralytics.py::require_ultralytics()` 只在构造真实后端时
   导入 ultralytics；未安装时抛出 `PerceptionError`（带安装指引），由流水线降级，包导入本身不依赖它。
-- **权重分发**：ultralytics 首次加载 `yolov8s-worldv2.pt` 时会从官方源联网下载到本地缓存。
-  离线一体机部署需预先把权重放入运行目录或缓存，并将 `detector_weights` 指向本地路径；
-  权重二进制**不入本仓库**（体积与许可证原因），部署时单独分发。
+- **权重分发**：ultralytics 首次加载 `yolov8s-worldv2.pt` 时会从官方源联网下载检测权重；首次推理
+  （`set_classes`/`predict`）还会联网下载 CLIP 文本编码器权重（约 338M）到运行目录的 `weights/`。
+  离线一体机部署需预先把两类权重放入运行目录或缓存，并将 `detector_weights` 指向本地路径；
+  权重二进制**不入本仓库**——`*.pt`、`*.onnx`、`/weights/` 等已在 `.gitignore` 排除，部署时单独分发。
+- **首帧超时提示**：上述一次性下载发生在首帧推理期间，可能超过默认 `detector_timeout_seconds`（10s）
+  而使首帧降级（`推理超过 ...s`）。首次运行请用较大的 `AVC_DETECTOR_TIMEOUT_SECONDS`（如 600）预热
+  下载并缓存权重，之后各帧延迟回落到亚秒级。
 
 ## 许可证与合规（未完成确认前不进入商业发布包）
 
@@ -110,15 +119,23 @@ uv run python examples/run_yolo_world_detection.py path/to/image.png
 uv run avc run --input tests/fixtures/sample_image.png --detector yolo-world --json
 ```
 
-### 基准记录（待在目标设备实测填写）
+### 基准记录
 
-> 以下为占位表格，需在 Windows 10 一体机（或指定目标设备）实测后填写；
-> issue #6 不承诺一体机实时性能，本 PoC 仅要求记录至少一轮数据。
+第一轮已在 macOS 开发机（MacBook Air，`device=cpu`）实测，命令为
+`uv run python examples/run_yolo_world_detection.py`（首帧含一次性权重加载/下载，故偏高）：
 
 | 设备 | 权重 | imgsz | device | 素材 | 单帧延迟(min/mean/max, s) | CPU/内存峰值 | 检测数量/质量备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 待填写 | yolov8s-worldv2.pt | 640 | cpu | sample_image.png | 待填写 | 待填写 | 待填写 |
-| 待填写 | yolov8s-worldv2.pt | 640 | cpu | sample_video.mp4 | 待填写 | 待填写 | 待填写 |
+| MacBook Air (macOS) | yolov8s-worldv2.pt | 640 | cpu | sample_image.png（320x240） | 3.145 / 3.145 / 3.145（冷启动，含加载） | 未采集 | 检出 0；合成图无真实 person/hand/phone/screen，属预期 |
+| MacBook Air (macOS) | yolov8s-worldv2.pt | 640 | cpu | sample_video.mp4（160x120，4 帧） | 0.190 / 0.807 / 3.145（首帧冷、后续约 0.19） | 未采集 | 每帧检出 1 个 `screen`，conf 0.05–0.08（低置信度，开放词汇在合成小图上的正常表现） |
+
+结论：真实推理链路已跑通，权重加载后单帧 CPU 推理约 0.19s；输出为低置信度 `screen`，
+说明固定合成素材并非理想评估样本，需换用含真实 person/hand/phone/screen 的素材再评质量。
+CPU/内存峰值本轮未采集，且**目标 Windows 10 一体机基准仍待实测**（issue #6 不承诺一体机实时性能）：
+
+| 设备 | 权重 | imgsz | device | 素材 | 单帧延迟(min/mean/max, s) | CPU/内存峰值 | 检测数量/质量备注 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Windows 10 一体机（待填写） | yolov8s-worldv2.pt | 640 | cpu | 待补真实素材 | 待填写 | 待填写 | 待填写 |
 
 质量评估口径：人工核对固定素材上的检测框是否覆盖 person/hand/phone/screen，记录漏检、误检与
 置信度分布，作为是否进入真实摄像头阶段（PoC-5）的依据。
