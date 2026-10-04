@@ -19,6 +19,7 @@ from ..perception import (
     MockRelationReasoner,
     MockTarget,
     MockTracker,
+    RelateAnythingReasoner,
     RelationRule,
     StaticSceneDetector,
     YoloWorldDetector,
@@ -55,6 +56,22 @@ def build_detector(
     if config.detector_backend == "yolo-world":
         return YoloWorldDetector.from_config(config)
     return StaticSceneDetector(targets)
+
+
+def build_reasoner(
+    config: AppConfig,
+    *,
+    relation_rules: Sequence[RelationRule] = DEFAULT_RELATION_RULES,
+) -> RelationReasoner:
+    """按配置装配关系推理器。
+
+    `reasoner_backend=relate-anything` 时返回真实 RelateAnything 适配器（首次推理惰性加载模型），
+    否则返回 Mock `MockRelationReasoner`。两种实现都满足 `RelationReasoner` 协议，
+    时间线与上层模块无需感知差异。
+    """
+    if config.reasoner_backend == "relate-anything":
+        return RelateAnythingReasoner.from_config(config)
+    return MockRelationReasoner(relation_rules)
 
 
 def build_mock_pipeline(
@@ -96,7 +113,7 @@ def build_mock_pipeline(
         source=resolved_source,
         detector=detector or build_detector(config, targets=targets),
         tracker=tracker or MockTracker(),
-        reasoner=reasoner or MockRelationReasoner(relation_rules),
+        reasoner=reasoner or build_reasoner(config, relation_rules=relation_rules),
         timeline=BoundedTimeline(
             capacity=config.timeline_capacity,
             default_ttl=timedelta(seconds=config.observation_ttl_seconds),

@@ -28,6 +28,11 @@ from agent_visual_context.perception import (
     StaticSceneDetector,
 )
 from agent_visual_context.perception.base import Detector, RelationReasoner, Tracker
+from agent_visual_context.perception.relate_anything import (
+    RawTriplet,
+    RelateAnythingReasoner,
+    RelateAnythingSettings,
+)
 from agent_visual_context.perception.yolo_world import (
     RawDetection,
     YoloWorldDetector,
@@ -218,3 +223,91 @@ def test_yolo_world_detector_feeds_mock_tracker_unchanged() -> None:
     tracked: list[TrackedObject] = tracker.update(frame, detector.detect(frame))
 
     assert [item.track_id for item in tracked] == ["person-01", "screen-01"]
+
+
+class _StubRelationBackend:
+    """契约测试用的最小关系推理后端，返回固定的原始三元组。"""
+
+    model_version = "relate-anything:stub"
+
+    def predict(
+        self, image: object, boxes: object, box_labels: object, **kwargs: object
+    ) -> list[RawTriplet]:
+        return [
+            RawTriplet(subject_index=0, predicate="looking_at", object_index=1, confidence=0.88),
+            RawTriplet(subject_index=0, predicate="near", object_index=1, confidence=0.65),
+        ]
+
+
+def test_relate_anything_satisfies_relation_reasoner_protocol() -> None:
+    """真实适配器与 Mock 满足同一 `RelationReasoner` 协议，可直接替换。"""
+    reasoner: RelationReasoner = RelateAnythingReasoner(
+        RelateAnythingSettings(vocabulary=("looking_at", "near")),
+        backend=_StubRelationBackend(),
+    )
+    tracker = MockTracker()
+    frame = Frame(
+        frame_id="stub-00000",
+        source_id="stub",
+        captured_at=T0,
+        width=640,
+        height=480,
+        data="PIXELS",
+    )
+    detections = [
+        Detection(
+            label=label,
+            bbox=BBox(x=offset, y=0, width=100, height=200),
+            confidence=0.9,
+            detected_at=frame.captured_at,
+        )
+        for offset, label in enumerate(("person", "screen"))
+    ]
+    tracked = tracker.update(frame, detections)
+
+    relations: list[Relation] = reasoner.infer(frame, tracked)
+
+    assert len(relations) == 2
+    assert relations[0].key == ("person-01", "looking_at", "screen-01")
+    assert relations[1].key == ("person-01", "near", "screen-01")
+    assert all(r.observed_at == frame.captured_at for r in relations)
+    assert all(r.model_version == "relate-anything:stub" for r in relations)
+
+
+def test_relate_anything_replaces_mock_without_upstream_changes() -> None:
+    """关系推理器换成 RelateAnything 后，时间线与上层模块无需修改。"""
+    reasoner: RelationReasoner = RelateAnythingReasoner(
+        RelateAnythingSettings(vocabulary=("looking_at", "near")),
+        backend=_StubRelationBackend(),
+    )
+    mock_reasoner: RelationReasoner = MockRelationReasoner(
+        [RelationRule(subject_label="person", predicate="looking_at", target_label="screen")]
+    )
+    tracker = MockTracker()
+    frame = Frame(
+        frame_id="stub-00000",
+        source_id="stub",
+        captured_at=T0,
+        width=640,
+        height=480,
+        data="PIXELS",
+    )
+    detections = [
+        Detection(
+            label=label,
+            bbox=BBox(x=offset * 200, y=0, width=100, height=200),
+            confidence=0.9,
+            detected_at=frame.captured_at,
+        )
+        for offset, label in enumerate(("person", "screen"))
+    ]
+    tracked = tracker.update(frame, detections)
+
+    real_relations = reasoner.infer(frame, tracked)
+    mock_relations = mock_reasoner.infer(frame, tracked)
+
+    # 两种实现输出相同的领域类型，上层代码无需区分
+    assert all(isinstance(r, Relation) for r in real_relations)
+    assert all(isinstance(r, Relation) for r in mock_relations)
+    # 真实适配器输出更丰富（含 near），Mock 只按规则输出 looking_at
+    assert len(real_relations) >= len(mock_relations)
