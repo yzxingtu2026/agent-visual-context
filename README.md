@@ -122,7 +122,9 @@ get_turn_context(turn_id)             获取某个语音话轮的视觉快照
 - [x] 用 Mock 检测/关系结果跑通视觉时间线（Issue #4）；
 - [x] 完成图片/短视频最小闭环：统一帧输入 -> Mock 检测/关系 -> 时间线（Issue #5）；
 - [x] 接入 YOLO-World 目标检测适配器：可配置类别/阈值/设备，模型不可用时降级（Issue #6）；
-- [ ] 在目标 Windows 10 一体机上验证性能与资源隔离；
+- [x] 接入 RelateAnything 关系推理适配器：可配置关系词/阈值/设备，模型不可用时降级（Issue #7）；
+- [x] 接入本地摄像头实时链路：CameraSource + 有界保最新帧队列 + 实时 Sidecar 循环 + 健康/指标（Issue #8）；
+- [ ] 在目标 Windows 10 一体机上执行摄像头真机实测、资源隔离验证与 PoC 结论（Issue #8 后续）；
 - [ ] 设计视觉观察数据模型和 Agent API；
 - [ ] 实现主动迎宾候选事件与冷却状态机；
 - [ ] 接入阿国饭店双工语音上下文；
@@ -191,13 +193,34 @@ uv run python examples/run_yolo_world_detection.py    # 逐帧打印检测框/�
 失败时流水线降级为“该帧无检测”而不崩溃。模型版本、权重来源、许可证（AGPL-3.0/GPL-3.0，商用前
 须完成合规确认）与真机基准口径见 [docs/research/yolo-world.md](docs/research/yolo-world.md)。
 
+### 运行摄像头实时链路 PoC（PoC-5）
+
+安装 `vision` extra 后，`avc camera` 会启动本地摄像头的实时 Sidecar 链路：后台采集线程持续抓帧写入
+有界“保最新帧”缓冲，主循环按 `--fps` 低频取最新帧推理；摄像头打不开、读帧失败或模型超时都只降级、
+不阻塞宿主（大屏与语音链路），运行结束输出健康状态、运行指标与场景快照：
+
+```bash
+uv sync --extra vision
+uv run avc camera --duration 10                     # 默认设备 0，运行 10s 后输出健康/指标/摘要
+uv run avc camera --device 1 --fps 2 --frames 20    # 指定设备、采样帧率与最大处理帧数
+uv run avc camera --duration 5 --json               # 输出健康状态 + 指标 + 快照 JSON
+uv run python examples/run_camera_live.py           # 示例：实时链路 + 健康/指标/快照输出
+```
+
+设备选择、请求分辨率、缓冲容量、采集失败上限与运行时长均可配置（`AVC_CAMERA_*`、`AVC_LIVE_*`）；
+摄像头循环只存在于 `runtime/live.py`，不写进模型适配器或 CLI。**目标设备（Windows 一体机）真机实测、
+CPU/内存/有效 FPS 等指标记录与 PoC 结论在后续 Issue 完成**；`LiveMetrics` 已预留 `cpu_percent`/`rss_mb`
+字段，由真机压测脚本填充。
+
 常用环境变量统一使用前缀 `AVC_`，例如 `AVC_SCENE_ID`、`AVC_SOURCE_ID`、`AVC_MAX_FRAMES`、
 `AVC_TARGET_FPS`、`AVC_OBSERVATION_TTL_SECONDS`、`AVC_WINDOW_SECONDS`、`AVC_LOG_LEVEL`、`AVC_FAIL_FAST`，
 以及检测器相关的 `AVC_DETECTOR_BACKEND`、`AVC_DETECTOR_CLASSES`、`AVC_DETECTOR_DEVICE` 等。
 
-当前 PoC 尚未接入摄像头：输入支持离线图片/视频文件（Issue #5），目标检测已可选接入真实
-YOLO-World 适配器（Issue #6，默认仍为 Mock），跟踪与关系推理仍由 Mock 组件提供，用于验证模块
-边界、时间线约束与降级机制；真实跟踪与关系推理适配器分别在 Issue #7、#8 中接入。
+当前 PoC 进度：输入支持离线图片/视频文件（Issue #5）与本地摄像头实时流（Issue #8）；目标检测可选接入
+真实 YOLO-World 适配器（Issue #6，默认仍为 Mock），关系推理可选接入真实 RelateAnything 适配器
+（Issue #7，默认仍为 Mock），跟踪仍由 Mock 组件提供，用于验证模块边界、时间线约束与降级机制。
+摄像头链路的真机性能实测、资源隔离验证与 PoC 结论在后续 Issue 完成。所有视觉输出均为辅助观察，
+不触发任何业务写操作。
 
 ### 架构与边界
 

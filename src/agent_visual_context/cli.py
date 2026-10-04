@@ -14,6 +14,7 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from dataclasses import asdict
 from datetime import datetime
 
 from . import __version__
@@ -25,6 +26,7 @@ from .runtime import (
     ComponentState,
     PipelineState,
     RunResult,
+    build_live_runtime,
     build_mock_pipeline,
     build_offline_pipeline,
 )
@@ -62,6 +64,26 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--frames", type=int, default=None, help="处理帧数，默认取配置 max_frames")
     run.add_argument("--json", action="store_true", help="以 JSON 输出场景摘要")
 
+    camera = subparsers.add_parser(
+        "camera", help="以本地摄像头运行实时视觉链路（需 `uv sync --extra vision`）"
+    )
+    _add_common_args(camera)
+    camera.add_argument("--device", type=int, default=None, help="摄像头设备索引，默认 0")
+    camera.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="运行时长（秒）；与 --frames 都缺省时取配置 live_duration_seconds",
+    )
+    camera.add_argument("--frames", type=int, default=None, help="最大处理帧数")
+    camera.add_argument(
+        "--detector",
+        choices=["mock", "yolo-world"],
+        default=None,
+        help="目标检测器后端，默认 mock；yolo-world 需 `uv sync --extra yolo-world`",
+    )
+    camera.add_argument("--json", action="store_true", help="以 JSON 输出健康状态、指标与摘要")
+
     return parser
 
 
@@ -93,6 +115,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "version":
             _cmd_version()
             return 0
+
+        if args.command == "camera":
+            camera_config = _camera_config(args)
+            configure_logging(camera_config.log_level)
+            return _cmd_camera(camera_config, args)
 
         config = _config_from_args(args)
         configure_logging(config.log_level)
@@ -169,6 +196,67 @@ def _cmd_run(
         f"观察：{len(snapshot.observations)} 事件：{len(snapshot.events)}"
     )
     return 0 if pipeline.status.state != PipelineState.FAILED else 1
+
+
+def _camera_config(args: argparse.Namespace) -> AppConfig:
+    """摄像头命令的配置：分辨率映射到 camera_*，采样频率复用 target_fps。"""
+    return load_config(
+        scene_id=args.scene_id,
+        source_id=args.source_id,
+        target_fps=args.fps,
+        camera_device_index=args.device,
+        camera_width=args.width,
+        camera_height=args.height,
+        detector_backend=getattr(args, "detector", None),
+        log_level=args.log_level,
+    )
+
+
+def _cmd_camera(config: AppConfig, args: argparse.Namespace) -> int:
+    """以本地摄像头运行实时视觉链路；摄像头循环在 LiveRuntime 内，CLI 只负责装配与报告。"""
+    runtime = build_live_runtime(config)
+    api = VisualContextApi.from_live_runtime(runtime)
+
+    duration = args.duration
+    frames = args.frames
+    if duration is None and frames is None:
+        duration = config.live_duration_seconds
+    result = runtime.run(duration_seconds=duration, max_frames=frames)
+
+    metrics = api.get_metrics()
+    failed = result.status.state == PipelineState.FAILED
+
+    if args.json:
+        payload = {
+            "status": result.status.model_dump(mode="json"),
+            "metrics": asdict(metrics) if metrics is not None else None,
+            "snapshot": (
+                result.snapshot.model_dump(mode="json") if result.snapshot is not None else None
+            ),
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+        return 1 if failed else 0
+
+    print(f"场景 {config.scene_id} 实时视觉链路")
+    print(f"状态：{result.status.state.value} 采集降级：{'是' if runtime.capture_failed else '否'}")
+    print("组件状态：")
+    for name, health in result.status.components.items():
+        detail = health.model_version
+        if health.last_error:
+            detail += f" 最近错误={health.last_error}"
+        print(f"  - {name:<9} {health.state.value:<8} {detail}")
+    if metrics is not None:
+        print(
+            f"指标：运行 {metrics.uptime_seconds:.1f}s 采集 {metrics.frames_captured} "
+            f"处理 {metrics.frames_processed} 丢弃 {metrics.frames_dropped} "
+            f"有效FPS {metrics.effective_fps:.2f} 丢帧率 {metrics.drop_rate:.2f} "
+            f"失败率 {metrics.failure_rate:.2f} 平均延迟 {metrics.mean_latency_seconds:.3f}s"
+        )
+    if result.snapshot is not None:
+        for highlight in result.snapshot.highlights:
+            print(f"  {highlight}")
+    print("提示：以上均为视觉辅助观察，不触发任何业务写操作。")
+    return 1 if failed else 0
 
 
 def _snapshot_moment(result: RunResult) -> datetime | None:

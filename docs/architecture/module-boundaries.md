@@ -4,7 +4,9 @@
 关系推理器和输入源接入时必须遵守的边界约定。对应 Issue #9（PoC-0 项目骨架），
 关系生命周期与两类快照服务在 Issue #4（PoC-1 Mock 视觉时间线）中补充，
 离线图片/视频输入适配在 Issue #5（PoC-2）中补充，
-YOLO-World 目标检测适配器在 Issue #6（PoC-3）中补充。
+YOLO-World 目标检测适配器在 Issue #6（PoC-3）中补充，
+RelateAnything 关系推理适配器在 Issue #7（PoC-4）中补充，
+本地摄像头实时链路与 Sidecar 循环在 Issue #8（PoC-5）中补充。
 
 ## 目录结构
 
@@ -16,7 +18,7 @@ src/agent_visual_context/
 ├── temporal/     # 去抖、持续时间、TTL、有界时间线
 ├── context/      # 场景摘要与时间窗口快照
 ├── policies/     # 迎宾候选等规则；只产出候选事件，不执行业务动作
-├── runtime/      # 流水线编排、事件总线、生命周期与降级状态
+├── runtime/      # 流水线编排、事件总线、生命周期与降级状态；实时 Sidecar 循环、有界帧缓冲与运行指标
 ├── api/          # Agent 查询/订阅接口边界
 ├── config.py     # 统一配置模型（环境变量前缀 AVC_）
 ├── logging_setup.py  # 统一日志配置
@@ -60,7 +62,7 @@ cli / api  ->  runtime  ->  context / policies / temporal  ->  perception / inpu
 
 | 组件 | 协议位置 | Mock 实现 | 真实实现（后续） |
 | --- | --- | --- | --- |
-| 输入源 | `input/base.py::FrameSource` | `ScriptedFrameSource` | `ImageFrameSource`、`VideoFrameSource`（PoC-2 已落地）；摄像头适配器（PoC-5） |
+| 输入源 | `input/base.py::FrameSource` | `ScriptedFrameSource` | `ImageFrameSource`、`VideoFrameSource`（PoC-2）；`CameraSource`（PoC-5 已落地，`input/camera.py`） |
 | 目标检测 | `perception/base.py::Detector` | `StaticSceneDetector`、`ScriptedDetector` | `YoloWorldDetector`（PoC-3 已落地，`perception/yolo_world.py`） |
 | 目标跟踪 | `perception/base.py::Tracker` | `MockTracker` | IoU/外观匹配跟踪器（PoC-3） |
 | 关系推理 | `perception/base.py::RelationReasoner` | `MockRelationReasoner` | RelateAnything 适配器（PoC-4） |
@@ -109,6 +111,34 @@ cli / api  ->  runtime  ->  context / policies / temporal  ->  perception / inpu
   由流水线降级为“该帧无检测”并标记 `detector` 组件状态；空检测结果是正常空列表，不算失败。
 - **可观测**：每帧记录模型版本、推理耗时、输入尺寸、检测数量与类别分布（logger
   `perception.yolo_world`），并累积到 `YoloWorldDetector.stats`。
+
+### 本地摄像头实时链路（PoC-5）
+
+摄像头是**无限实时流**，与离线源"跑到耗尽"的语义不同。实时链路的落点与约定如下：
+
+- **落点唯一**：摄像头采集只在 `input/camera.py::CameraSource`；实时采集/消费循环只在
+  `runtime/live.py::LiveRuntime`；有界帧缓冲在 `runtime/buffer.py::LatestFrameBuffer`；
+  运行指标在 `runtime/metrics.py::LiveMetrics`。**摄像头循环不得写进模型适配器或 CLI**。
+- **装配**：`runtime/factory.py::build_camera_source()` 与 `build_live_runtime()` 是唯一装配口径，
+  CLI `avc camera`、示例与测试都通过工厂构造；不要在业务代码里直接实例化 `CameraSource`/`LiveRuntime`。
+- **可插拔后端**：`CameraSource` 通过 `backend`/`backend_factory` 注入 `CameraBackend`，
+  真实实现 `OpenCVCameraBackend` 惰性加载 cv2（`vision` extra）；测试注入假后端即可离线验证，
+  无需真实摄像头。设备选择/分辨率/采样频率取自 `config.camera_*` 与 `target_fps`。
+- **生命周期**：直接复用 `AbstractFrameSource` 的 `open()`/`close()`（即启动/停止采集）与上下文管理器；
+  `LiveRuntime.start()/stop()` 管理后台采集线程与设备，二者均幂等。
+- **采集/消费解耦**：后台采集线程（daemon）持续 `read()` 写入 `LatestFrameBuffer`（有界、丢旧保最新），
+  主消费循环取最新帧交给 `Pipeline.process_frame()`；高帧率采集与低频（1~2 FPS）推理互不阻塞，
+  缓冲永不无限堆积。低频采样由 `CameraSource` 按 `target_fps` 节流（`sleeper` 可注入便于测试）。
+- **降级不阻塞宿主**：摄像头打不开、读帧连续失败（达 `live_max_capture_failures`）、模型异常/超时都只降级，
+  `LiveRuntime.run()` **绝不向上抛出**，返回 `degraded` 状态，确保不阻塞大屏渲染、麦克风采集、
+  语音 WebSocket 与 TTS 播放；推理超时由各适配器 `*_timeout_seconds` 与组件级降级覆盖，
+  消费循环再对兜底异常做一次捕获，防止实时循环因单帧崩溃退出。
+- **可观测**：`LiveMetrics` 累积有效 FPS、端到端延迟（min/max/mean）、丢帧率与模型失败率，
+  周期性写结构化日志（logger `runtime.live`）；CPU/内存（`cpu_percent`/`rss_mb`）为**预留字段**，
+  由目标设备真机压测脚本填充——真机实测与 PoC 结论在后续 Issue 完成，本模块不引入 `psutil` 等额外依赖。
+- **健康查询**：`api/queries.py::VisualContextApi.from_live_runtime()` 暴露 `get_health()`（组件+整体状态）
+  与 `get_metrics()`，是宿主链路判断视觉是否可用的唯一口径；视觉降级时宿主读到 `degraded` 即可跳过视觉增强，
+  无需等待或阻塞。所有输出仍是视觉辅助观察，不触发任何业务写操作。
 
 ## 数据分型
 

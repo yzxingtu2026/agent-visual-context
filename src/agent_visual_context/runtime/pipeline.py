@@ -115,6 +115,11 @@ class Pipeline:
         return self._config
 
     @property
+    def source(self) -> FrameSource:
+        """当前流水线的输入源；实时链路由 `LiveRuntime` 驱动其采集生命周期。"""
+        return self._source
+
+    @property
     def clock(self) -> Callable[[], datetime]:
         return self._clock
 

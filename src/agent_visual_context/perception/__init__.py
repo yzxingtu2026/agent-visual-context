@@ -17,9 +17,9 @@ from .relate_anything import (
     RelateAnythingBackend,
     RelateAnythingReasoner,
     RelateAnythingSettings,
-    RelSggBackend,
     RelationMetrics,
     RelationStats,
+    RelSggBackend,
 )
 from .yolo_world import (
     DetectionMetrics,
