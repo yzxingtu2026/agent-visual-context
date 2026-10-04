@@ -18,6 +18,28 @@
     uv run python examples/run_camera_visual.py --classes person,phone,screen \\
         --relations looking_at,holding,pointing_at,near    # 自配类别与关系词
 
+办公室场景（笔记本自带摄像头）常用类别组合，可按需增减：
+
+    # 人手与手持设备（最轻量，适合验证「人拿着手机」这类中文上下文）
+    uv run python examples/run_camera_visual.py --detector yolo-world --reasoner relate-anything \\
+        --classes person,hand,phone,laptop --relations holding,looking_at,touching,near
+    # 桌面物品
+    uv run python examples/run_camera_visual.py --detector yolo-world --reasoner relate-anything \\
+        --classes person,laptop,keyboard,mouse,cup,bottle \\
+        --relations using,looking_at,touching,next_to,near
+    # 会议/协作场景
+    uv run python examples/run_camera_visual.py --detector yolo-world --reasoner relate-anything \\
+        --classes person,chair,table,laptop,screen,whiteboard \\
+        --relations sitting_on,facing,looking_at,pointing_at,near
+    # 阅读/书写场景
+    uv run python examples/run_camera_visual.py --detector yolo-world --reasoner relate-anything \\
+        --classes person,book,notebook,paper,pen,phone \\
+        --relations holding,reading,looking_at,typing_on,near
+    # 全量办公（类别多、推理更慢，CPU 上建议 --fps 1）
+    uv run python examples/run_camera_visual.py --detector yolo-world --reasoner relate-anything \\
+        --fps 1 --classes person,hand,phone,laptop,keyboard,mouse,monitor,cup,bottle,book,backpack,chair,table \\
+        --relations holding,looking_at,using,touching,next_to,near
+
 无摄像头/无显示器时，可用离线素材跑同一套可视化并保存标注帧（便于验证与 CI 人工核对）：
 
     uv run python examples/run_camera_visual.py --input tests/fixtures/sample_detection.png \\
@@ -45,7 +67,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from agent_visual_context.config import load_config
-from agent_visual_context.domain import Relation, Snapshot, TrackedObject
+from agent_visual_context.domain import Observation, Relation, Snapshot, TrackedObject
 from agent_visual_context.input import frame_source_from_path
 from agent_visual_context.input.base import FrameSource
 from agent_visual_context.logging_setup import configure_logging, get_logger
@@ -72,6 +94,91 @@ _PALETTE: tuple[tuple[int, int, int], ...] = (
     (120, 120, 240),
     (240, 200, 120),
 )
+
+# 英文标签 -> 中文名词，用于把上下文面板的观察渲染成自然中文（如「人拿着手机」）。
+# 未命中时回退原文，保证任何类别都有可读输出。覆盖办公室与门店常见目标。
+_LABEL_ZH: dict[str, str] = {
+    "person": "人",
+    "people": "人",
+    "hand": "手",
+    "phone": "手机",
+    "cell phone": "手机",
+    "mobile phone": "手机",
+    "laptop": "笔记本电脑",
+    "computer": "电脑",
+    "keyboard": "键盘",
+    "mouse": "鼠标",
+    "monitor": "显示器",
+    "screen": "屏幕",
+    "display": "屏幕",
+    "tv": "电视",
+    "cup": "杯子",
+    "mug": "马克杯",
+    "bottle": "水瓶",
+    "book": "书",
+    "notebook": "笔记本",
+    "paper": "纸张",
+    "document": "文件",
+    "pen": "笔",
+    "chair": "椅子",
+    "table": "桌子",
+    "desk": "办公桌",
+    "backpack": "背包",
+    "bag": "包",
+    "headset": "耳机",
+    "earphone": "耳机",
+    "whiteboard": "白板",
+    "projector": "投影仪",
+    "plant": "绿植",
+    "window": "窗户",
+    "door": "门",
+    "menu": "菜单",
+    "food": "食物",
+    "plate": "餐盘",
+}
+
+# 英文谓词 -> 中文动词，与 _LABEL_ZH 组合成「人拿着手机」这类自然句。
+_PREDICATE_ZH: dict[str, str] = {
+    "looking_at": "看着",
+    "watching": "看着",
+    "facing": "面向",
+    "holding": "拿着",
+    "carrying": "携带",
+    "pointing_at": "指着",
+    "touching": "触摸",
+    "using": "使用",
+    "typing_on": "敲击",
+    "reading": "阅读",
+    "drinking": "喝",
+    "talking_to": "交谈",
+    "sitting_on": "坐在",
+    "standing_on": "站在",
+    "on": "在…上",
+    "on_top_of": "在…顶部",
+    "next_to": "挨着",
+    "beside": "在…旁边",
+    "near": "靠近",
+    "behind": "在…后面",
+    "in_front_of": "在…前面",
+    "under": "在…下面",
+    "above": "在…上面",
+    "wearing": "佩戴",
+}
+
+
+def _zh(token: str, table: dict[str, str]) -> str:
+    """查中文映射表；未命中（含大小写差异）时回退原文。"""
+    return table.get(token) or table.get(token.lower()) or token
+
+
+def _observation_sentence(observation: Observation) -> str:
+    """把一条观察渲染成自然中文句，如「人拿着手机」；无宾语时仅主谓。"""
+    subject = _zh(observation.subject.label, _LABEL_ZH)
+    predicate = _zh(observation.predicate, _PREDICATE_ZH)
+    if observation.target is None:
+        return f"{subject}{predicate}"
+    return f"{subject}{predicate}{_zh(observation.target.label, _LABEL_ZH)}"
+
 
 # 中文字体候选路径，覆盖 macOS / Windows / 常见 Linux 发行版。
 _FONT_CANDIDATES: tuple[str, ...] = (
@@ -328,9 +435,14 @@ def _context_lines(
             (255, 255, 255),
         ),
     ]
-    # highlights[0] 是“最近 N 秒观察到 X 条”，与表头重复，跳过；取其后若干条明细。
-    for highlight in snapshot.highlights[1:5]:
-        lines.append((highlight, (235, 235, 235)))
+    # 观察明细渲染成自然中文句（如「人拿着手机」），比英文 highlights 更贴近真实语义。
+    for observation in snapshot.observations[:4]:
+        lines.append(
+            (
+                f"- {_observation_sentence(observation)}（置信度 {observation.confidence:.2f}）",
+                (235, 235, 235),
+            )
+        )
     lines.append(("视觉辅助观察 · 不触发业务写操作", (150, 180, 255)))
     return lines
 
