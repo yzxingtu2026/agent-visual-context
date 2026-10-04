@@ -127,7 +127,8 @@ uv run avc run --input tests/fixtures/sample_detection.png --reasoner relate-any
 
 | 设备 | 权重 | device | 素材 | 目标数 | 单帧延迟(min/mean/max, s) | CPU/内存峰值 | 关系数量/质量备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| MacBook Air (macOS) | relsgg-vits16plus | cpu | sample_detection.png（1024x768，真实场景） | 3（Mock 固定区域） | 0.466 / 0.495 / 0.495 | 未采集 | 检出 3 个关系：holding 0.31、near 0.19、near 0.14；正确识别 person-holding-phone |
+| MacBook Air (macOS) | relsgg-vits16plus | cpu | sample_detection.png（1024x768，真实场景） | 4（YOLO-World 真实检测） | 0.560 / 0.560 / 0.560 | 未采集 | 检出 4 个关系：holding 0.38、facing 0.22、near 0.12×2；正确识别 person-holding-screen、screen-facing-person |
+| MacBook Air (macOS) | relsgg-vits16plus | cpu | sample_detection.png（1024x768，真实场景） | 3（Mock 固定区域） | 0.466 / 0.495 / 0.495 | 未采集 | 检出 3 个关系：holding 0.31、near 0.19、near 0.14；Mock 区域偏差导致置信度偏低 |
 | Windows 10 一体机（待填写） | relsgg-vits16plus | cpu | sample_detection.png | 待填写 | 待填写 | 待填写 | 待填写 |
 
 质量评估口径：人工核对固定素材上的关系三元组是否覆盖 looking_at/facing/holding/pointing_at/touching/near，
@@ -136,17 +137,19 @@ uv run avc run --input tests/fixtures/sample_detection.png --reasoner relate-any
 ### 首轮真机验证结论
 
 已在 macOS 开发机（MacBook Air，`device=cpu`）实测，命令为
-`uv run python examples/run_relate_anything.py`（使用 Mock 固定目标区域，ultralytics 未安装）：
+`uv run python examples/run_relate_anything.py`（YOLO-World 真实检测 + RelateAnything 真实推理）：
 
 - 模型从 HuggingFace 加载权重约 96s（首次），后续帧无下载开销；
-- 单帧 CPU 推理约 0.47–0.50s（3 个目标区域、6 个关系词）；
-- 正确识别 `person --holding--> phone`（conf=0.31），符合 sample_detection.png 的实际内容；
-- `person --near--> screen`（0.19）和 `screen --near--> person`（0.14）也合理；
-- `looking_at`、`facing`、`pointing_at`、`touching` 未过阈值（均 < 0.1），
-  可能因 Mock 目标区域与真实人体/屏幕位置偏差较大，待接入 YOLO-World 真实检测框后复测；
-- 整体置信度偏低（最高 0.31），开放词汇关系推理在 CPU 小模型上属正常表现，
-  流水线级 `min_relation_confidence`（默认 0.4）需根据实测分布调低或保持，
-  建议 PoC-5 摄像头阶段结合真实检测框重新标定阈值。
+- YOLO-World 检出 4 个目标（person、screen、hand×2），RelateAnything 单帧 CPU 推理约 0.56s；
+- 正确识别 `person --holding--> screen`（conf=0.38）和 `screen --facing--> person`（0.22），
+  符合 sample_detection.png 的实际内容（人站在菜单屏前）；
+- `hand --near--> screen`（0.12×2）也合理，但置信度偏低；
+- `looking_at`、`pointing_at`、`touching` 未过阈值（均 < 0.1），
+  可能因 ViT-S/16+ 小模型对细粒度朝向/触摸关系召回有限，
+  待 PoC-5 摄像头阶段结合更大权重或更多样本复测；
+- 整体置信度偏低（最高 0.38），开放词汇关系推理在 CPU 小模型上属正常表现，
+  流水线级 `min_relation_confidence`（默认 0.4）需根据实测分布调低（建议 0.15–0.2），
+  否则大部分关系无法进入时间线。
 
 ## 边界约束（务必遵守）
 
