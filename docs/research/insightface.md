@@ -5,7 +5,7 @@
 - SDK：`insightface>=0.7.3,<0.8`，来源 [deepinsight/insightface](https://github.com/deepinsight/insightface)，代码许可证 MIT；运行时还依赖 `onnxruntime>=1.18,<2`（MIT）与 `opencv-python>=4.10,<5`（Apache-2.0）。以本地安装包的 LICENSE 为最终依据。
 - 权重：默认模型名 `buffalo_l`，由使用者从 [官方 model zoo](https://github.com/deepinsight/insightface/tree/master/python-package) 单独取得，放入 `~/.insightface/models/buffalo_l/`。本仓库不下载、缓存、提交或分发任何权重。
 - 官方预训练模型的使用范围与 SDK 代码许可证不同：官方说明仅供**非商业研究/验证**。商用须单独取得权重及训练数据的相应授权，或更换获授权模型；安装 SDK 不等于获得权重商用许可。
-- 运行时健康信息中的模型版本由 SDK 版本与模型包名构成；部署时还应记录本地 ONNX 文件的来源、发布日期及哈希，避免同名权重混用。
+- 运行时健康信息中的模型版本由 SDK 版本与模型包名构成；部署时还应记录本地 ONNX 文件的来源、发布日期及哈希，避免同名权重混用。首次分析会先完成一次模型冷启动，随后 `face_timeout_seconds` 只限制单帧推理，不把冷启动时间误算为推理超时。
 
 ## 启用
 

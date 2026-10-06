@@ -84,6 +84,9 @@ class InsightFaceAnalyzer:
     def analyze(self, frame: Frame) -> list[FaceObservation]:
         if frame.data is None:
             raise PerceptionError("人脸分析缺少像素数据")
+        # Model construction loads several ONNX files and can exceed the per-frame
+        # inference budget. Do it once before submitting the bounded inference job.
+        self._ensure_backend()
         if self._pending is not None:
             if not self._pending.done():
                 raise PerceptionError("上一帧人脸推理仍在运行")
@@ -136,9 +139,12 @@ class InsightFaceAnalyzer:
         return faces
 
     def _infer(self, image: Any) -> list[Any]:
+        assert self._backend is not None
+        return self._backend.get(image)
+
+    def _ensure_backend(self) -> None:
         if self._backend is None:
             self._backend = self._backend_factory()
-        return self._backend.get(image)
 
     def close(self) -> None:
         self._executor.shutdown(wait=False, cancel_futures=True)
