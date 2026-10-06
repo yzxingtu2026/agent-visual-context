@@ -12,6 +12,11 @@ from .mock import (
     ScriptedDetector,
     StaticSceneDetector,
 )
+from .person_identity import (
+    IdentityAuthorizationError,
+    IdentityStoreDisabled,
+    InMemoryIdentityStore,
+)
 from .relate_anything import (
     DEFAULT_VOCABULARY,
     RawTriplet,
@@ -40,6 +45,9 @@ __all__ = [
     "Detector",
     "FaceAnalyzer",
     "InsightFaceAnalyzer",
+    "IdentityAuthorizationError",
+    "IdentityStoreDisabled",
+    "InMemoryIdentityStore",
     "MockRelationReasoner",
     "MockTarget",
     "MockTracker",

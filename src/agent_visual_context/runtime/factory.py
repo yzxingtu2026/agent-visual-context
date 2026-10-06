@@ -18,6 +18,7 @@ from ..input import ScriptedFrameSource, frame_source_from_path, synthetic_frame
 from ..input.base import FrameSource
 from ..input.camera import CameraBackend, CameraSource
 from ..perception import (
+    InMemoryIdentityStore,
     InsightFaceAnalyzer,
     MockRelationReasoner,
     MockTarget,
@@ -105,6 +106,7 @@ def build_mock_pipeline(
     detector: Detector | None = None,
     tracker: Tracker | None = None,
     face_analyzer: FaceAnalyzer | None = None,
+    identity_store: InMemoryIdentityStore | None = None,
     reasoner: RelationReasoner | None = None,
     policies: Sequence[Policy] | None = None,
     bus: EventBus | None = None,
@@ -138,6 +140,14 @@ def build_mock_pipeline(
         detector=detector or build_detector(config, targets=targets),
         tracker=tracker or build_tracker(config),
         face_analyzer=face_analyzer or build_face_analyzer(config),
+        identity_store=(identity_store or InMemoryIdentityStore(
+            enabled=config.identity_matching_enabled,
+            match_threshold=config.identity_match_threshold,
+            candidate_threshold=config.identity_candidate_threshold,
+            ambiguity_margin=config.identity_ambiguity_margin,
+            confirmation_frames=config.identity_confirmation_frames,
+            retention_seconds=config.identity_retention_seconds,
+        )),
         reasoner=reasoner or build_reasoner(config, relation_rules=relation_rules),
         timeline=BoundedTimeline(
             capacity=config.timeline_capacity,
@@ -174,6 +184,7 @@ def build_offline_pipeline(
     detector: Detector | None = None,
     tracker: Tracker | None = None,
     face_analyzer: FaceAnalyzer | None = None,
+    identity_store: InMemoryIdentityStore | None = None,
     reasoner: RelationReasoner | None = None,
     policies: Sequence[Policy] | None = None,
     bus: EventBus | None = None,
@@ -200,6 +211,7 @@ def build_offline_pipeline(
         detector=detector or build_detector(resolved_config, targets=targets),
         tracker=tracker,
         face_analyzer=face_analyzer,
+        identity_store=identity_store,
         reasoner=reasoner,
         policies=policies,
         bus=bus,
@@ -248,6 +260,7 @@ def build_live_runtime(
     detector: Detector | None = None,
     tracker: Tracker | None = None,
     face_analyzer: FaceAnalyzer | None = None,
+    identity_store: InMemoryIdentityStore | None = None,
     reasoner: RelationReasoner | None = None,
     policies: Sequence[Policy] | None = None,
     bus: EventBus | None = None,
@@ -274,6 +287,7 @@ def build_live_runtime(
         detector=detector or build_detector(resolved_config, targets=targets),
         tracker=tracker,
         face_analyzer=face_analyzer,
+        identity_store=identity_store,
         reasoner=reasoner or build_reasoner(resolved_config, relation_rules=relation_rules),
         policies=policies,
         bus=bus,

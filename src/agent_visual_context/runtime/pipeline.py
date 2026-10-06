@@ -26,6 +26,7 @@ from ..domain import (
     Frame,
     Observation,
     PersonCountQuality,
+    PersonIdentityMatch,
     PersonSceneSummary,
     Relation,
     Snapshot,
@@ -37,6 +38,7 @@ from ..input.base import FrameSource
 from ..logging_setup import get_logger
 from ..perception.base import Detector, FaceAnalyzer, RelationReasoner, Tracker
 from ..perception.face_association import associate_faces
+from ..perception.person_identity import InMemoryIdentityStore
 from ..policies.base import Policy
 from ..temporal import BoundedTimeline, PersistenceGate
 from .bus import EventBus
@@ -67,6 +69,7 @@ class FrameResult:
     tracked_items: tuple[TrackedObject, ...] = ()
     relation_items: tuple[Relation, ...] = ()
     face_items: tuple[FaceObservation, ...] = ()
+    identity_items: tuple[PersonIdentityMatch, ...] = ()
     persons: PersonSceneSummary | None = None
 
 
@@ -92,6 +95,7 @@ class Pipeline:
         detector: Detector,
         tracker: Tracker,
         face_analyzer: FaceAnalyzer | None = None,
+        identity_store: InMemoryIdentityStore | None = None,
         reasoner: RelationReasoner,
         timeline: BoundedTimeline | None = None,
         gate: PersistenceGate | None = None,
@@ -105,6 +109,7 @@ class Pipeline:
         self._detector = detector
         self._tracker = tracker
         self._face_analyzer = face_analyzer
+        self._identity_store = identity_store
         self._reasoner = reasoner
         self._clock = clock
         self.timeline = (
@@ -145,6 +150,10 @@ class Pipeline:
     def source(self) -> FrameSource:
         """当前流水线的输入源；实时链路由 `LiveRuntime` 驱动其采集生命周期。"""
         return self._source
+
+    @property
+    def identity_store(self) -> InMemoryIdentityStore | None:
+        return self._identity_store
 
     @property
     def clock(self) -> Callable[[], datetime]:
@@ -238,7 +247,16 @@ class Pipeline:
                 self.status.mark_ok("face_analyzer", now=moment)
             else:
                 degraded.append("face_analyzer")
+        identity_matches: tuple[PersonIdentityMatch, ...] = ()
+        if self._identity_store is not None and face_ok:
+            identity_matches = self._identity_store.match_faces(
+                faces,
+                source_id=frame.source_id,
+                observed_at=moment,
+                ttl_seconds=self._config.observation_ttl_seconds,
+            )
         result.face_items = tuple(faces)
+        result.identity_items = identity_matches
         result.persons = self.timeline.add_person_summary(
             PersonSceneSummary(
                 scene_id=self._config.scene_id,
@@ -259,6 +277,7 @@ class Pipeline:
                     for face in faces if face.track_id is not None
                     and (face.age_band is not None or face.apparent_gender is not None)
                 ),
+                identity_matches=identity_matches,
                 confidence=(
                     min(item.confidence for item in people)
                     if people and detector_ok and "person" in self._config.detector_classes
