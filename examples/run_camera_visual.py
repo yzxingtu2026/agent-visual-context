@@ -389,6 +389,23 @@ def _draw_relations(
         )
 
 
+def _draw_faces(img: object, result: FrameResult) -> None:
+    for face in result.face_items:
+        x, y = int(face.bbox.x), int(face.bbox.y)
+        w, h = int(face.bbox.width), int(face.bbox.height)
+        color = (100, 230, 230) if face.track_id else (100, 100, 230)
+        cv2.rectangle(img, (x, y), (x + w, y + h), color, 1)  # type: ignore[arg-type]
+        for point_x, point_y in face.landmarks:
+            cv2.circle(img, (int(point_x), int(point_y)), 2, color, -1)  # type: ignore[arg-type]
+        label = face.track_id or "unknown"
+        if face.track_id and face.age_band:
+            label += f" {face.age_band}"
+        if face.track_id and face.apparent_gender:
+            label += f" {face.apparent_gender}"
+        cv2.putText(img, label, (x, max(14, y - 5)), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4, color, 1, cv2.LINE_AA)  # type: ignore[arg-type]
+
+
 def _draw_header(img: object, status: PipelineStatus, fps: float) -> None:
     """左上角 ASCII 状态条：链路状态与有效 FPS。"""
     text = f"state={status.state.value} degraded={'Y' if status.is_degraded else 'N'} fps={fps:.1f}"
@@ -416,6 +433,7 @@ def _context_lines(
     )
     sampled = "-" if persons is None else persons.sampled_at.strftime("%H:%M:%S")
     quality = "unavailable" if persons is None else persons.quality.value
+    faces = "?" if persons is None or persons.recognizable_face_count is None else str(persons.recognizable_face_count)
     if not chinese:
         return [
             (f"[context] last {snapshot.duration_seconds:.0f}s", (120, 220, 120)),
@@ -428,7 +446,7 @@ def _context_lines(
                 f"obs={len(snapshot.observations)} events={len(snapshot.events)}",
                 (255, 255, 255),
             ),
-            (f"people={count} sampled={sampled} quality={quality}", (255, 255, 255)),
+            (f"people={count} faces={faces} sampled={sampled} quality={quality}", (255, 255, 255)),
             ("install viz extra + CJK font for Chinese", (150, 180, 255)),
         ]
 
@@ -443,7 +461,7 @@ def _context_lines(
             f"观察 {len(snapshot.observations)} · 事件 {len(snapshot.events)}",
             (255, 255, 255),
         ),
-        (f"当前人数 {count} · 采样 {sampled} · 质量 {quality}", (255, 255, 255)),
+        (f"当前人数 {count} · 可见人脸 {faces} · 采样 {sampled} · 质量 {quality}", (255, 255, 255)),
     ]
     # 观察明细渲染成自然中文句（如「人拿着手机」），比英文 highlights 更贴近真实语义。
     for observation in snapshot.observations[:4]:
@@ -467,6 +485,7 @@ def _annotate(
 ) -> object:
     img = frame_bgr.copy()  # type: ignore[attr-defined]
     centers = _draw_tracked(img, result.tracked_items)
+    _draw_faces(img, result)
     _draw_relations(img, result.relation_items, centers)
     _draw_header(img, status, fps)
     if img.shape[1] < 640:  # type: ignore[attr-defined]
@@ -497,6 +516,9 @@ def run(args: argparse.Namespace) -> int:
         camera_width=args.width,
         camera_height=args.height,
         detector_backend=args.detector,
+        tracker_backend=args.tracker,
+        face_backend=args.face,
+        face_model_dir=Path(args.face_model_dir).expanduser(),
         reasoner_backend=args.reasoner,
         detector_classes=_split_csv(args.classes),
         reasoner_vocabulary=_split_csv(args.relations),
@@ -609,6 +631,9 @@ def _show(img: object, window: str, index: int) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(description="摄像头全链路可视化示例（画框 + 中文上下文）")
     parser.add_argument("--device", type=int, default=0, help="摄像头设备索引，默认 0")
+    parser.add_argument("--tracker", choices=("mock", "short-term"), default="short-term")
+    parser.add_argument("--face", choices=("disabled", "insightface"), default="disabled")
+    parser.add_argument("--face-model-dir", default="~/.insightface")
     parser.add_argument("--fps", type=float, default=2.0, help="采样帧率，默认 2.0")
     parser.add_argument("--width", type=int, default=640, help="请求分辨率宽，默认 640")
     parser.add_argument("--height", type=int, default=480, help="请求分辨率高，默认 480")

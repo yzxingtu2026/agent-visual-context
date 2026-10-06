@@ -8,6 +8,7 @@ YOLO-World 目标检测适配器在 Issue #6（PoC-3）中补充，
 RelateAnything 关系推理适配器在 Issue #7（PoC-4）中补充，
 本地摄像头实时链路与 Sidecar 循环在 Issue #8（PoC-5）中补充。
 人体检测人数摘要与查询契约在 Issue #16 中补充。
+短时跟踪与可选人脸分析在 Issue #17 中补充。
 
 ## 目录结构
 
@@ -65,7 +66,8 @@ cli / api  ->  runtime  ->  context / policies / temporal  ->  perception / inpu
 | --- | --- | --- | --- |
 | 输入源 | `input/base.py::FrameSource` | `ScriptedFrameSource` | `ImageFrameSource`、`VideoFrameSource`（PoC-2）；`CameraSource`（PoC-5 已落地，`input/camera.py`） |
 | 目标检测 | `perception/base.py::Detector` | `StaticSceneDetector`、`ScriptedDetector` | `YoloWorldDetector`（PoC-3 已落地，`perception/yolo_world.py`） |
-| 目标跟踪 | `perception/base.py::Tracker` | `MockTracker` | IoU/外观匹配跟踪器（PoC-3） |
+| 目标跟踪 | `perception/base.py::Tracker` | `MockTracker` | `ShortTermTracker`（Issue #17） |
+| 人脸分析 | `perception/base.py::FaceAnalyzer` | 测试注入替身 | `InsightFaceAnalyzer`（Issue #17） |
 | 关系推理 | `perception/base.py::RelationReasoner` | `MockRelationReasoner` | RelateAnything 适配器（PoC-4） |
 | 策略 | `policies/base.py::Policy` | `GreetingCandidatePolicy` | 迎宾状态机与冷却策略 |
 
@@ -160,11 +162,28 @@ cli / api  ->  runtime  ->  context / policies / temporal  ->  perception / inpu
 
 摘要带 `scene_id`、`source_id`、`sampled_at`、`expires_at`，有效期受时间线默认 TTL 限制。
 `recognizable_face_count` 在未接入人脸分析时为 `null`，绝不使用人体数或 `0` 代替。
-`window_distinct_person_count` 在可靠跨帧跟踪能力接入前为 `null`：当前 `MockTracker` 的
-类别顺序 ID 不能证明跨帧同一人，不能用于窗口去重。时间线最多保存 `timeline_capacity` 条
+`window_distinct_person_count` 仍为 `null`：短时轨迹不能证明跨帧或跨会话身份，不能用于窗口去重。
+时间线最多保存 `timeline_capacity` 条
 人数样本，快照只暴露窗口内最新且在查询时刻未过期的一条；无有效样本时 `persons=null`。
 `get_scene_snapshot()` 和 `get_turn_context()` 都使用这一字段，过期样本不会成为当前场景。
 这些人数是视觉估计，不是身份或业务事实，也不直接触发业务动作。
+
+### 短时跟踪与人脸（Issue #17）
+
+`tracker_backend=short-term` 使用位置、运动预测和框重叠做同类目标的一对一匹配；超出
+`tracker_max_gap_seconds` 的轨迹过期。ID 在同一 tracker 实例内单调递增，`reset()` 后也不复用。
+交错或遮挡使匹配不确定时可能产生新 ID，因此 `track_id` 只代表连续可见轨迹，不是人员身份。
+
+`face_backend=disabled` 为默认值。启用 `insightface` 时，权重必须预先放在
+`face_model_dir/models/<face_model_name>/`，且包含 `.onnx` 文件；适配器不会下载模型。
+分析在单工作线程执行，每帧限时 `face_timeout_seconds`；前一推理仍未完成时拒绝新任务，
+防止请求积压。超时不能中断底层 ONNX 调用，因此任务结束前人脸组件保持降级。
+人脸框心必须位于人体框上部，且人脸不能过宽；候选过近或同一人体对应多张脸时不关联。
+`recognizable_face_count` 是本帧检测出的人脸数，低质量或无法关联仍计数；组件失败时为 `null`。
+年龄段及外观性别是可选模型估计，未提供校准置信度时对应 confidence 为 `null`，
+不应解释为当事人的实际年龄或性别。`FaceObservation.embedding` 仅在单帧结果内存中供后续
+授权匹配使用，序列化时排除；时间线、Agent 文本快照和普通日志仅保留计数与可选估计。
+人脸组件失败只标记自己的健康状态，人体检测计数与关系推理继续运行。
 
 三类信息必须分型，视觉观察不得伪装成用户意图或业务事实：
 

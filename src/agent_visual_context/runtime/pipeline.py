@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from time import monotonic
 from typing import TypeVar
 
 from ..config import AppConfig
@@ -20,6 +21,8 @@ from ..context import SceneSummarizer
 from ..domain import (
     Detection,
     Event,
+    FaceEstimate,
+    FaceObservation,
     Frame,
     Observation,
     PersonCountQuality,
@@ -32,7 +35,8 @@ from ..domain import (
 from ..errors import PerceptionError
 from ..input.base import FrameSource
 from ..logging_setup import get_logger
-from ..perception.base import Detector, RelationReasoner, Tracker
+from ..perception.base import Detector, FaceAnalyzer, RelationReasoner, Tracker
+from ..perception.face_association import associate_faces
 from ..policies.base import Policy
 from ..temporal import BoundedTimeline, PersistenceGate
 from .bus import EventBus
@@ -62,6 +66,7 @@ class FrameResult:
     detection_items: tuple[Detection, ...] = ()
     tracked_items: tuple[TrackedObject, ...] = ()
     relation_items: tuple[Relation, ...] = ()
+    face_items: tuple[FaceObservation, ...] = ()
     persons: PersonSceneSummary | None = None
 
 
@@ -86,6 +91,7 @@ class Pipeline:
         source: FrameSource,
         detector: Detector,
         tracker: Tracker,
+        face_analyzer: FaceAnalyzer | None = None,
         reasoner: RelationReasoner,
         timeline: BoundedTimeline | None = None,
         gate: PersistenceGate | None = None,
@@ -98,6 +104,7 @@ class Pipeline:
         self._source = source
         self._detector = detector
         self._tracker = tracker
+        self._face_analyzer = face_analyzer
         self._reasoner = reasoner
         self._clock = clock
         self.timeline = (
@@ -203,31 +210,7 @@ class Pipeline:
         ]
         result.detections = len(detections)
         people = [item for item in detections if item.label == "person"]
-        result.persons = self.timeline.add_person_summary(
-            PersonSceneSummary(
-                scene_id=self._config.scene_id,
-                source_id=frame.source_id,
-                sampled_at=moment,
-                expires_at=moment + timedelta(seconds=self._config.observation_ttl_seconds),
-                current_person_count=(
-                    len(people) if ok and "person" in self._config.detector_classes else None
-                ),
-                confidence=(
-                    min(item.confidence for item in people)
-                    if people and ok and "person" in self._config.detector_classes
-                    else None
-                ),
-                quality=(
-                    PersonCountQuality.DEGRADED
-                    if not ok
-                    else PersonCountQuality.UNAVAILABLE
-                    if "person" not in self._config.detector_classes
-                    else PersonCountQuality.DETECTED
-                    if people
-                    else PersonCountQuality.NO_DETECTION
-                ),
-            )
-        )
+        detector_ok = ok
 
         tracked, ok = self._call(
             "tracker",
@@ -238,6 +221,60 @@ class Pipeline:
             degraded.append("tracker")
             tracked = []
         result.tracked_objects = len(tracked)
+
+        faces: list[FaceObservation] = []
+        face_ok = False
+        face_analyzer = self._face_analyzer
+        if face_analyzer is not None:
+            face_started = monotonic()
+            faces, face_ok = self._call(
+                "face_analyzer", lambda: face_analyzer.analyze(frame), now=moment
+            )
+            self.status.register("face_analyzer").last_latency_ms = (
+                monotonic() - face_started
+            ) * 1000
+            if face_ok:
+                faces = associate_faces(faces, tracked, min_quality=self._config.face_min_quality)
+                self.status.mark_ok("face_analyzer", now=moment)
+            else:
+                degraded.append("face_analyzer")
+        result.face_items = tuple(faces)
+        result.persons = self.timeline.add_person_summary(
+            PersonSceneSummary(
+                scene_id=self._config.scene_id,
+                source_id=frame.source_id,
+                sampled_at=moment,
+                expires_at=moment + timedelta(seconds=self._config.observation_ttl_seconds),
+                current_person_count=(
+                    len(people) if detector_ok and "person" in self._config.detector_classes else None
+                ),
+                recognizable_face_count=len(faces) if face_ok else None,
+                face_estimates=tuple(
+                    FaceEstimate(
+                        track_id=face.track_id, age_band=face.age_band,
+                        age_confidence=face.age_confidence,
+                        apparent_gender=face.apparent_gender,
+                        gender_confidence=face.gender_confidence,
+                    )
+                    for face in faces if face.track_id is not None
+                    and (face.age_band is not None or face.apparent_gender is not None)
+                ),
+                confidence=(
+                    min(item.confidence for item in people)
+                    if people and detector_ok and "person" in self._config.detector_classes
+                    else None
+                ),
+                quality=(
+                    PersonCountQuality.DEGRADED
+                    if not detector_ok
+                    else PersonCountQuality.UNAVAILABLE
+                    if "person" not in self._config.detector_classes
+                    else PersonCountQuality.DETECTED
+                    if people
+                    else PersonCountQuality.NO_DETECTION
+                ),
+            )
+        )
 
         relations, ok = self._call(
             "reasoner",
@@ -326,6 +363,10 @@ class Pipeline:
         self.status.register("source", model_version=self._source.source_id)
         self.status.register("detector", model_version=self._detector.model_version)
         self.status.register("tracker", model_version=self._tracker.model_version)
+        if self._face_analyzer is not None:
+            self.status.register("face_analyzer", model_version=self._face_analyzer.model_version)
+        else:
+            self.status.disable("face_analyzer")
         self.status.register("reasoner", model_version=self._reasoner.model_version)
         if not self.policies:
             self.status.disable("policies")

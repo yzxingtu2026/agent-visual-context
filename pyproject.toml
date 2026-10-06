@@ -41,6 +41,13 @@ viz = [
     "opencv-python>=4.10,<5",
     "Pillow>=10.0",
 ]
+# InsightFace SDK is separate from its pretrained weights. Install only for local
+# noncommercial validation; supply licensed ONNX files under face_model_dir.
+face = [
+    "insightface>=0.7.3,<0.8",
+    "onnxruntime>=1.18,<2",
+    "opencv-python>=4.10,<5",
+]
 
 [project.scripts]
 avc = "agent_visual_context.cli:main"

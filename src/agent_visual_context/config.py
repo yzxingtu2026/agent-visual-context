@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -53,6 +55,15 @@ class AppConfig(BaseSettings):
     # 单帧推理超时；超时按可恢复异常降级，不中断流水线。
     detector_timeout_seconds: float = Field(default=10.0, gt=0)
     detector_weights: str = "yolov8s-worldv2.pt"
+
+    tracker_backend: str = "mock"
+    tracker_max_gap_seconds: float = Field(default=1.0, gt=0)
+    face_backend: str = "disabled"
+    face_model_dir: Path = Path("~/.insightface").expanduser()
+    face_model_name: str = "buffalo_l"
+    face_device: str = "cpu"
+    face_timeout_seconds: float = Field(default=2.0, gt=0)
+    face_min_quality: float = Field(default=0.5, ge=0, le=1)
 
     # 关系推理器（PoC-4：RelateAnything 适配器）
     # backend=mock 时使用 MockRelationReasoner；backend=relate-anything 时装配真实适配器。
@@ -170,6 +181,22 @@ class AppConfig(BaseSettings):
         if normalized not in allowed:
             msg = f"camera_backend 必须是 {sorted(allowed)} 之一，收到 {value!r}"
             raise ConfigurationError(msg)
+        return normalized
+
+    @field_validator("tracker_backend")
+    @classmethod
+    def _validate_tracker_backend(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"mock", "short-term"}:
+            raise ConfigurationError("tracker_backend 必须为 mock 或 short-term")
+        return normalized
+
+    @field_validator("face_backend")
+    @classmethod
+    def _validate_face_backend(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"disabled", "insightface"}:
+            raise ConfigurationError("face_backend 必须为 disabled 或 insightface")
         return normalized
 
 

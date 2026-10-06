@@ -9,9 +9,11 @@ from .factory import (
     DEFAULT_TARGETS,
     build_camera_source,
     build_detector,
+    build_face_analyzer,
     build_live_runtime,
     build_mock_pipeline,
     build_offline_pipeline,
+    build_tracker,
 )
 from .live import LiveRunResult, LiveRuntime
 from .metrics import LiveMetrics, MetricsSnapshot
@@ -37,7 +39,9 @@ __all__ = [
     "RunResult",
     "build_camera_source",
     "build_detector",
+    "build_face_analyzer",
     "build_live_runtime",
     "build_mock_pipeline",
     "build_offline_pipeline",
+    "build_tracker",
 ]
