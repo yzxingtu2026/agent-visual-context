@@ -408,6 +408,14 @@ def _context_lines(
 ) -> list[tuple[str, tuple[int, int, int]]]:
     """构造右下角面板文本（中文优先，无字体时用 ASCII 兜底）。"""
     state = status.state.value
+    persons = snapshot.persons
+    count = (
+        "?"
+        if persons is None or persons.current_person_count is None
+        else str(persons.current_person_count)
+    )
+    sampled = "-" if persons is None else persons.sampled_at.strftime("%H:%M:%S")
+    quality = "unavailable" if persons is None else persons.quality.value
     if not chinese:
         return [
             (f"[context] last {snapshot.duration_seconds:.0f}s", (120, 220, 120)),
@@ -420,6 +428,7 @@ def _context_lines(
                 f"obs={len(snapshot.observations)} events={len(snapshot.events)}",
                 (255, 255, 255),
             ),
+            (f"people={count} sampled={sampled} quality={quality}", (255, 255, 255)),
             ("install viz extra + CJK font for Chinese", (150, 180, 255)),
         ]
 
@@ -434,6 +443,7 @@ def _context_lines(
             f"观察 {len(snapshot.observations)} · 事件 {len(snapshot.events)}",
             (255, 255, 255),
         ),
+        (f"当前人数 {count} · 采样 {sampled} · 质量 {quality}", (255, 255, 255)),
     ]
     # 观察明细渲染成自然中文句（如「人拿着手机」），比英文 highlights 更贴近真实语义。
     for observation in snapshot.observations[:4]:
@@ -459,6 +469,11 @@ def _annotate(
     centers = _draw_tracked(img, result.tracked_items)
     _draw_relations(img, result.relation_items, centers)
     _draw_header(img, status, fps)
+    if img.shape[1] < 640:  # type: ignore[attr-defined]
+        scale = 640 / img.shape[1]  # type: ignore[attr-defined]
+        img = cv2.resize(img, (640, round(img.shape[0] * scale)))
+        footer = np.zeros((220, 640, 3), dtype=img.dtype)  # type: ignore[attr-defined]
+        img = np.vstack((img, footer))
     panel.draw(img, _context_lines(result, snapshot, status, fps, chinese=panel.chinese))
     return img
 

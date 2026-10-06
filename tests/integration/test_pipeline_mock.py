@@ -7,7 +7,16 @@ from datetime import timedelta
 import pytest
 
 from agent_visual_context.config import AppConfig
-from agent_visual_context.domain import Event, Frame, Observation, Relation, TrackedObject
+from agent_visual_context.domain import (
+    BBox,
+    Detection,
+    Event,
+    Frame,
+    Observation,
+    PersonCountQuality,
+    Relation,
+    TrackedObject,
+)
 from agent_visual_context.errors import PerceptionError
 from agent_visual_context.input import ScriptedFrameSource, synthetic_frames
 from agent_visual_context.policies import GreetingCandidatePolicy
@@ -24,6 +33,27 @@ class FailingReasoner:
         del frame, objects
         msg = "推理超时"
         raise PerceptionError(msg)
+
+
+class SequenceDetector:
+    model_version = "sequence"
+
+    def __init__(self, counts: list[int | None]) -> None:
+        self.counts = iter(counts)
+
+    def detect(self, frame: Frame) -> list[Detection]:
+        count = next(self.counts)
+        if count is None:
+            raise PerceptionError("detector unavailable")
+        return [
+            Detection(
+                label="person",
+                bbox=BBox(x=i * 20, y=0, width=10, height=20),
+                confidence=0.8,
+                detected_at=frame.captured_at,
+            )
+            for i in range(count)
+        ]
 
 
 def test_mock_pipeline_produces_bounded_observations(config: AppConfig, clock: FakeClock) -> None:
@@ -78,6 +108,58 @@ def test_process_frame_exposes_drawable_items(config: AppConfig, clock: FakeCloc
     assert relation.subject.track_id == "person-01"
     assert relation.target.track_id == "screen-01"
     pipeline.source.close()
+
+
+def test_person_summary_counts_current_frame_without_relations(
+    config: AppConfig, clock: FakeClock
+) -> None:
+    pipeline = build_mock_pipeline(config, clock=clock, detector=SequenceDetector([0, 1, 3, None]))
+    frames = synthetic_frames(4, source_id=config.source_id, start=T0)
+
+    for frame, count, quality in zip(
+        frames,
+        [0, 1, 3, None],
+        [
+            PersonCountQuality.NO_DETECTION,
+            PersonCountQuality.DETECTED,
+            PersonCountQuality.DETECTED,
+            PersonCountQuality.DEGRADED,
+        ],
+        strict=True,
+    ):
+        result = pipeline.process_frame(frame)
+        assert result.persons is not None
+        assert result.persons.current_person_count == count
+        assert result.persons.quality is quality
+        assert result.persons.recognizable_face_count is None
+        assert result.persons.window_distinct_person_count is None
+        assert result.observations == []
+        snapshot = pipeline.summarizer.build(pipeline.timeline, now=frame.captured_at)
+        assert snapshot.persons == result.persons
+
+    assert snapshot.persons is not None
+    assert snapshot.persons.current_person_count is None
+
+
+def test_person_summary_expires(config: AppConfig, clock: FakeClock) -> None:
+    pipeline = build_mock_pipeline(config, clock=clock, detector=SequenceDetector([1]))
+    frame = synthetic_frames(1, source_id=config.source_id, start=T0)[0]
+    pipeline.process_frame(frame)
+
+    future = frame.captured_at + timedelta(seconds=config.observation_ttl_seconds)
+    assert pipeline.summarizer.build(pipeline.timeline, now=future).persons is None
+
+
+def test_person_count_unavailable_when_class_is_disabled(clock: FakeClock) -> None:
+    config = AppConfig(detector_classes=["screen"])
+    pipeline = build_mock_pipeline(config, clock=clock, detector=SequenceDetector([0]))
+    frame = synthetic_frames(1, source_id=config.source_id, start=T0)[0]
+
+    summary = pipeline.process_frame(frame).persons
+
+    assert summary is not None
+    assert summary.current_person_count is None
+    assert summary.quality is PersonCountQuality.UNAVAILABLE
 
 
 def test_pipeline_degrades_when_reasoner_fails(config: AppConfig, clock: FakeClock) -> None:

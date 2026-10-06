@@ -55,7 +55,10 @@ class WindowSnapshotBuilder:
             timeline.observations(start=start, end=moment, now=moment)
         )
         events = timeline.events(start=start, end=moment, now=moment)
-        resolved_scene = scene_id or (observations[0].scene_id if observations else "")
+        persons = timeline.latest_person_summary(start=start, end=moment, now=moment)
+        resolved_scene = scene_id or (
+            observations[0].scene_id if observations else (persons.scene_id if persons else "")
+        )
         scope = f"话轮 {label} 期间" if label else "指定窗口内"
         highlights = [f"{scope}观察到 {len(observations)} 条视觉观察、{len(events)} 条规则事件"]
         return Snapshot(
@@ -65,5 +68,6 @@ class WindowSnapshotBuilder:
             window_end=moment,
             observations=observations,
             events=events,
+            persons=persons,
             highlights=highlights,
         )

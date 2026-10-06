@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from agent_visual_context.domain import Event, Observation, TrackRef
+from agent_visual_context.domain import (
+    Event,
+    Observation,
+    PersonCountQuality,
+    PersonSceneSummary,
+    TrackRef,
+)
 from agent_visual_context.temporal import BoundedTimeline
 from tests.conftest import T0
 
@@ -88,3 +94,34 @@ def test_window_query_filters_by_observed_at_and_expiry() -> None:
         T0 + timedelta(seconds=3),
         T0 + timedelta(seconds=4),
     ]
+
+
+def test_person_summary_capacity_ttl_and_latest_window() -> None:
+    timeline = BoundedTimeline(capacity=2, default_ttl=timedelta(seconds=2))
+    for offset in range(3):
+        sampled_at = T0 + timedelta(seconds=offset)
+        timeline.add_person_summary(
+            PersonSceneSummary(
+                scene_id="scene-test",
+                source_id="camera",
+                sampled_at=sampled_at,
+                expires_at=sampled_at + timedelta(seconds=99),
+                current_person_count=offset,
+                quality=PersonCountQuality.DETECTED,
+            )
+        )
+
+    assert timeline.dropped_total == 1
+    latest = timeline.latest_person_summary(
+        start=T0 + timedelta(seconds=1),
+        end=T0 + timedelta(seconds=2),
+        now=T0 + timedelta(seconds=2),
+    )
+    assert latest is not None and latest.current_person_count == 2
+    assert latest.expires_at == T0 + timedelta(seconds=4)
+    assert (
+        timeline.latest_person_summary(
+            start=T0, end=T0 + timedelta(seconds=2), now=T0 + timedelta(seconds=4)
+        )
+        is None
+    )

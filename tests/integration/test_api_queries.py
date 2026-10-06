@@ -76,3 +76,15 @@ def test_turn_context_is_bounded_by_turn_window(config: AppConfig, clock: FakeCl
     assert turn.snapshot.window_end == clock()
     assert all(item.observed_at >= turn_start for item in turn.snapshot.observations)
     assert turn.snapshot.highlights
+    scene = api.get_scene_snapshot(now=clock())
+    assert scene.persons is not None
+    assert turn.snapshot.persons == scene.persons
+    assert scene.persons.current_person_count == 1
+    assert scene.persons.recognizable_face_count is None
+
+    outside = api.get_turn_context(
+        "older",
+        started_at=clock() - timedelta(seconds=20),
+        ended_at=clock() - timedelta(seconds=10),
+    )
+    assert outside.snapshot.persons is None

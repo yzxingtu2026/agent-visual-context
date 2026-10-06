@@ -7,6 +7,7 @@
 YOLO-World 目标检测适配器在 Issue #6（PoC-3）中补充，
 RelateAnything 关系推理适配器在 Issue #7（PoC-4）中补充，
 本地摄像头实时链路与 Sidecar 循环在 Issue #8（PoC-5）中补充。
+人体检测人数摘要与查询契约在 Issue #16 中补充。
 
 ## 目录结构
 
@@ -146,6 +147,24 @@ cli / api  ->  runtime  ->  context / policies / temporal  ->  perception / inpu
   以便逐帧绘制（cv2 窗口须在主线程）。
 
 ## 数据分型
+
+### 人数摘要（Issue #16）
+
+`PersonSceneSummary` 是单帧人体检测的有界视觉摘要，独立于关系观察。`Pipeline` 仅对通过
+`min_detection_confidence` 的 `person` 检测计数；背对镜头但人体可检测时仍计入。
+`current_person_count` 是最新有效采样帧的人数，绝不跨帧相加。检测成功但未见人时为 `0`，
+`quality=no-detection` 表示“本帧未检出”，不保证现场无人；检测器失败时人数为 `null`，
+`quality=degraded`，并覆盖之前的计数。有人检出时 `quality=detected`，`confidence` 为
+本帧人体检测置信度的最小值；空检测或降级时置信度为 `null`。
+未配置 `person` 检测类别时人数为 `null`、`quality=unavailable`，不把未检测当成 0。
+
+摘要带 `scene_id`、`source_id`、`sampled_at`、`expires_at`，有效期受时间线默认 TTL 限制。
+`recognizable_face_count` 在未接入人脸分析时为 `null`，绝不使用人体数或 `0` 代替。
+`window_distinct_person_count` 在可靠跨帧跟踪能力接入前为 `null`：当前 `MockTracker` 的
+类别顺序 ID 不能证明跨帧同一人，不能用于窗口去重。时间线最多保存 `timeline_capacity` 条
+人数样本，快照只暴露窗口内最新且在查询时刻未过期的一条；无有效样本时 `persons=null`。
+`get_scene_snapshot()` 和 `get_turn_context()` 都使用这一字段，过期样本不会成为当前场景。
+这些人数是视觉估计，不是身份或业务事实，也不直接触发业务动作。
 
 三类信息必须分型，视觉观察不得伪装成用户意图或业务事实：
 
