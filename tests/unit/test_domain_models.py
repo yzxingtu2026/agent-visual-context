@@ -12,6 +12,8 @@ from agent_visual_context.domain import (
     EpistemicStatus,
     Event,
     Observation,
+    PersonCountQuality,
+    PersonSceneSummary,
     TrackRef,
 )
 from tests.conftest import T0
@@ -74,3 +76,30 @@ def test_models_are_immutable() -> None:
 def test_bbox_rejects_non_positive_size() -> None:
     with pytest.raises(ValidationError):
         BBox(x=0, y=0, width=0, height=10)
+
+
+def test_person_summary_validates_count_confidence_and_expiry() -> None:
+    summary = PersonSceneSummary(
+        scene_id="scene-test",
+        source_id="camera",
+        sampled_at=T0,
+        expires_at=T0 + timedelta(seconds=4),
+        current_person_count=2,
+        confidence=0.8,
+        quality=PersonCountQuality.DETECTED,
+    )
+    assert summary.recognizable_face_count is None
+    assert summary.window_distinct_person_count is None
+    assert not summary.is_expired(T0)
+    assert summary.is_expired(summary.expires_at)
+
+    with pytest.raises(ValidationError):
+        PersonSceneSummary(
+            scene_id="scene-test",
+            source_id="camera",
+            sampled_at=T0,
+            expires_at=T0 + timedelta(seconds=4),
+            current_person_count=-1,
+            confidence=1.1,
+            quality=PersonCountQuality.DETECTED,
+        )

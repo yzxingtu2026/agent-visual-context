@@ -22,6 +22,8 @@ from ..domain import (
     Event,
     Frame,
     Observation,
+    PersonCountQuality,
+    PersonSceneSummary,
     Relation,
     Snapshot,
     TrackedObject,
@@ -60,6 +62,7 @@ class FrameResult:
     detection_items: tuple[Detection, ...] = ()
     tracked_items: tuple[TrackedObject, ...] = ()
     relation_items: tuple[Relation, ...] = ()
+    persons: PersonSceneSummary | None = None
 
 
 @dataclass(slots=True)
@@ -199,6 +202,32 @@ class Pipeline:
             item for item in detections if item.confidence >= self._config.min_detection_confidence
         ]
         result.detections = len(detections)
+        people = [item for item in detections if item.label == "person"]
+        result.persons = self.timeline.add_person_summary(
+            PersonSceneSummary(
+                scene_id=self._config.scene_id,
+                source_id=frame.source_id,
+                sampled_at=moment,
+                expires_at=moment + timedelta(seconds=self._config.observation_ttl_seconds),
+                current_person_count=(
+                    len(people) if ok and "person" in self._config.detector_classes else None
+                ),
+                confidence=(
+                    min(item.confidence for item in people)
+                    if people and ok and "person" in self._config.detector_classes
+                    else None
+                ),
+                quality=(
+                    PersonCountQuality.DEGRADED
+                    if not ok
+                    else PersonCountQuality.UNAVAILABLE
+                    if "person" not in self._config.detector_classes
+                    else PersonCountQuality.DETECTED
+                    if people
+                    else PersonCountQuality.NO_DETECTION
+                ),
+            )
+        )
 
         tracked, ok = self._call(
             "tracker",

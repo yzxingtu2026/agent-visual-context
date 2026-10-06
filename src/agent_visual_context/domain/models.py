@@ -163,6 +163,34 @@ class Event(BaseModel):
         return now >= self.expires_at
 
 
+class PersonCountQuality(StrEnum):
+    """人数样本的证据质量；空检测不等于确定无人。"""
+
+    DETECTED = "detected"
+    NO_DETECTION = "no-detection"
+    UNAVAILABLE = "unavailable"
+    DEGRADED = "degraded"
+
+
+class PersonSceneSummary(BaseModel):
+    """单帧人体检测摘要；跨帧身份统计在可靠跟踪接入前保持未知。"""
+
+    model_config = ConfigDict(frozen=True)
+
+    scene_id: str
+    source_id: str
+    sampled_at: datetime
+    expires_at: datetime
+    current_person_count: int | None = Field(ge=0)
+    recognizable_face_count: int | None = Field(default=None, ge=0)
+    window_distinct_person_count: int | None = Field(default=None, ge=0)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    quality: PersonCountQuality
+
+    def is_expired(self, now: datetime) -> bool:
+        return now >= self.expires_at
+
+
 class Snapshot(BaseModel):
     """有界时间窗口内的场景摘要，用于注入 Agent 话轮上下文。"""
 
@@ -172,6 +200,7 @@ class Snapshot(BaseModel):
     window_end: datetime
     observations: list[Observation] = Field(default_factory=list)
     events: list[Event] = Field(default_factory=list)
+    persons: PersonSceneSummary | None = None
     highlights: list[str] = Field(default_factory=list)
     degraded: bool = False
 

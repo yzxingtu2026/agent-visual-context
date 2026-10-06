@@ -9,7 +9,7 @@ from collections import deque
 from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta
 
-from ..domain import Event, Observation, utc_now
+from ..domain import Event, Observation, PersonSceneSummary, utc_now
 
 TimelineItem = Observation | Event
 
@@ -32,6 +32,7 @@ class BoundedTimeline:
         self._clock = clock
         self._observations: deque[Observation] = deque(maxlen=capacity)
         self._events: deque[Event] = deque(maxlen=capacity)
+        self._person_summaries: deque[PersonSceneSummary] = deque(maxlen=capacity)
         self.dropped_total = 0
 
     @property
@@ -61,10 +62,29 @@ class BoundedTimeline:
         self._append(self._events, event)
         return event
 
+    def add_person_summary(self, summary: PersonSceneSummary) -> PersonSceneSummary:
+        limit = summary.sampled_at + self._default_ttl
+        if summary.expires_at > limit:
+            summary = summary.model_copy(update={"expires_at": limit})
+        self._append(self._person_summaries, summary)
+        return summary
+
+    def latest_person_summary(
+        self, *, start: datetime, end: datetime, now: datetime
+    ) -> PersonSceneSummary | None:
+        for item in reversed(self._person_summaries):
+            if start <= item.sampled_at <= end and not item.is_expired(now):
+                return item
+        return None
+
     def prune(self, *, now: datetime | None = None) -> int:
         """移除已过期条目，返回移除数量。"""
         moment = now if now is not None else self.now()
-        removed = _prune_store(self._observations, moment) + _prune_store(self._events, moment)
+        removed = (
+            _prune_store(self._observations, moment)
+            + _prune_store(self._events, moment)
+            + _prune_person_summaries(self._person_summaries, moment)
+        )
         self.dropped_total += removed
         return removed
 
@@ -87,9 +107,11 @@ class BoundedTimeline:
         return _select(self._events, start=start, end=end, now=now)
 
     def __len__(self) -> int:
-        return len(self._observations) + len(self._events)
+        return len(self._observations) + len(self._events) + len(self._person_summaries)
 
-    def _append[T: (Observation, Event)](self, store: deque[T], item: T) -> None:
+    def _append[T: (Observation, Event, PersonSceneSummary)](
+        self, store: deque[T], item: T
+    ) -> None:
         if store.maxlen is not None and len(store) == store.maxlen:
             self.dropped_total += 1
         store.append(item)
@@ -97,6 +119,15 @@ class BoundedTimeline:
 
 def _prune_store[T: (Observation, Event)](store: deque[T], now: datetime) -> int:
     kept = [item for item in store if item.expires_at > now]
+    removed = len(store) - len(kept)
+    if removed:
+        store.clear()
+        store.extend(kept)
+    return removed
+
+
+def _prune_person_summaries(store: deque[PersonSceneSummary], now: datetime) -> int:
+    kept = [item for item in store if not item.is_expired(now)]
     removed = len(store) - len(kept)
     if removed:
         store.clear()

@@ -38,7 +38,10 @@ class SceneSummarizer:
             timeline.observations(start=start, end=moment, now=moment)
         )
         events = timeline.events(start=start, end=moment, now=moment)
-        scene_id = observations[0].scene_id if observations else ""
+        persons = timeline.latest_person_summary(start=start, end=moment, now=moment)
+        scene_id = (
+            observations[0].scene_id if observations else (persons.scene_id if persons else "")
+        )
 
         return Snapshot(
             scene_id=scene_id,
@@ -47,6 +50,7 @@ class SceneSummarizer:
             window_end=moment,
             observations=observations,
             events=events,
+            persons=persons,
             highlights=self._highlights(observations, events),
             degraded=degraded,
         )
