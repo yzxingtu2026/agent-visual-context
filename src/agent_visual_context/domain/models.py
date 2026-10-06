@@ -172,6 +172,35 @@ class PersonCountQuality(StrEnum):
     DEGRADED = "degraded"
 
 
+class FaceEstimate(BaseModel):
+    """Optional appearance estimates; neither field represents identity or sex."""
+
+    model_config = ConfigDict(frozen=True)
+
+    track_id: str
+    age_band: str | None = None
+    age_confidence: float | None = Field(default=None, ge=0, le=1)
+    apparent_gender: str | None = None
+    gender_confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class FaceObservation(BaseModel):
+    """Ephemeral per-frame face result. Embeddings are excluded from serialization."""
+
+    model_config = ConfigDict(frozen=True)
+
+    bbox: BBox
+    landmarks: tuple[tuple[float, float], ...] = ()
+    quality: float = Field(ge=0, le=1)
+    track_id: str | None = None
+    model_version: str
+    embedding: tuple[float, ...] | None = Field(default=None, exclude=True, repr=False)
+    age_band: str | None = None
+    age_confidence: float | None = Field(default=None, ge=0, le=1)
+    apparent_gender: str | None = None
+    gender_confidence: float | None = Field(default=None, ge=0, le=1)
+
+
 class PersonSceneSummary(BaseModel):
     """单帧人体检测摘要；跨帧身份统计在可靠跟踪接入前保持未知。"""
 
@@ -183,6 +212,7 @@ class PersonSceneSummary(BaseModel):
     expires_at: datetime
     current_person_count: int | None = Field(ge=0)
     recognizable_face_count: int | None = Field(default=None, ge=0)
+    face_estimates: tuple[FaceEstimate, ...] = ()
     window_distinct_person_count: int | None = Field(default=None, ge=0)
     confidence: float | None = Field(default=None, ge=0, le=1)
     quality: PersonCountQuality

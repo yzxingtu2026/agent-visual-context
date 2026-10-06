@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..domain import Detection, Frame, Relation, TrackedObject
+from ..domain import Detection, FaceObservation, Frame, Relation, TrackedObject
 
 
 class Detector(Protocol):
@@ -29,6 +29,13 @@ class Tracker(Protocol):
     def update(self, frame: Frame, detections: list[Detection]) -> list[TrackedObject]: ...
 
     def reset(self) -> None: ...
+
+
+class FaceAnalyzer(Protocol):
+    @property
+    def model_version(self) -> str: ...
+
+    def analyze(self, frame: Frame) -> list[FaceObservation]: ...
 
 
 class RelationReasoner(Protocol):

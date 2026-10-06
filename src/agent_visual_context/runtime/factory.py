@@ -18,15 +18,17 @@ from ..input import ScriptedFrameSource, frame_source_from_path, synthetic_frame
 from ..input.base import FrameSource
 from ..input.camera import CameraBackend, CameraSource
 from ..perception import (
+    InsightFaceAnalyzer,
     MockRelationReasoner,
     MockTarget,
     MockTracker,
     RelateAnythingReasoner,
     RelationRule,
+    ShortTermTracker,
     StaticSceneDetector,
     YoloWorldDetector,
 )
-from ..perception.base import Detector, RelationReasoner, Tracker
+from ..perception.base import Detector, FaceAnalyzer, RelationReasoner, Tracker
 from ..policies import GreetingCandidatePolicy, Policy
 from ..temporal import BoundedTimeline, PersistenceGate
 from .buffer import LatestFrameBuffer
@@ -79,6 +81,22 @@ def build_reasoner(
     return MockRelationReasoner(relation_rules)
 
 
+def build_tracker(config: AppConfig) -> Tracker:
+    if config.tracker_backend == "short-term":
+        return ShortTermTracker(max_gap_seconds=config.tracker_max_gap_seconds)
+    return MockTracker()
+
+
+def build_face_analyzer(config: AppConfig) -> FaceAnalyzer | None:
+    if config.face_backend == "insightface":
+        return InsightFaceAnalyzer(
+            model_dir=config.face_model_dir.expanduser(), model_name=config.face_model_name,
+            device=config.face_device, timeout_seconds=config.face_timeout_seconds,
+            min_quality=config.face_min_quality,
+        )
+    return None
+
+
 def build_mock_pipeline(
     config: AppConfig,
     *,
@@ -86,6 +104,7 @@ def build_mock_pipeline(
     source: FrameSource | None = None,
     detector: Detector | None = None,
     tracker: Tracker | None = None,
+    face_analyzer: FaceAnalyzer | None = None,
     reasoner: RelationReasoner | None = None,
     policies: Sequence[Policy] | None = None,
     bus: EventBus | None = None,
@@ -117,7 +136,8 @@ def build_mock_pipeline(
         config=config,
         source=resolved_source,
         detector=detector or build_detector(config, targets=targets),
-        tracker=tracker or MockTracker(),
+        tracker=tracker or build_tracker(config),
+        face_analyzer=face_analyzer or build_face_analyzer(config),
         reasoner=reasoner or build_reasoner(config, relation_rules=relation_rules),
         timeline=BoundedTimeline(
             capacity=config.timeline_capacity,
@@ -153,6 +173,7 @@ def build_offline_pipeline(
     source_id: str | None = None,
     detector: Detector | None = None,
     tracker: Tracker | None = None,
+    face_analyzer: FaceAnalyzer | None = None,
     reasoner: RelationReasoner | None = None,
     policies: Sequence[Policy] | None = None,
     bus: EventBus | None = None,
@@ -178,6 +199,7 @@ def build_offline_pipeline(
         source=source,
         detector=detector or build_detector(resolved_config, targets=targets),
         tracker=tracker,
+        face_analyzer=face_analyzer,
         reasoner=reasoner,
         policies=policies,
         bus=bus,
@@ -225,6 +247,7 @@ def build_live_runtime(
     sleeper: Callable[[float], None] = time.sleep,
     detector: Detector | None = None,
     tracker: Tracker | None = None,
+    face_analyzer: FaceAnalyzer | None = None,
     reasoner: RelationReasoner | None = None,
     policies: Sequence[Policy] | None = None,
     bus: EventBus | None = None,
@@ -250,6 +273,7 @@ def build_live_runtime(
         source=camera,
         detector=detector or build_detector(resolved_config, targets=targets),
         tracker=tracker,
+        face_analyzer=face_analyzer,
         reasoner=reasoner or build_reasoner(resolved_config, relation_rules=relation_rules),
         policies=policies,
         bus=bus,

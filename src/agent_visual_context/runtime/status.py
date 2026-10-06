@@ -34,6 +34,9 @@ class ComponentHealth(BaseModel):
     consecutive_failures: int = 0
     last_error: str | None = None
     last_ok_at: datetime | None = None
+    last_latency_ms: float | None = None
+    calls: int = 0
+    failures: int = 0
 
 
 class PipelineStatus(BaseModel):
@@ -71,10 +74,13 @@ class PipelineStatus(BaseModel):
         health.consecutive_failures = 0
         health.last_error = None
         health.last_ok_at = now
+        health.calls += 1
 
     def mark_failure(self, name: str, *, error: str, now: datetime, fatal: bool = False) -> None:
         health = self.register(name)
         health.consecutive_failures += 1
+        health.calls += 1
+        health.failures += 1
         health.last_error = error
         health.state = ComponentState.FAILED if fatal else ComponentState.DEGRADED
         self.last_error = f"{name}: {error}"

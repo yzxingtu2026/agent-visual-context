@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from .base import Detector, RelationReasoner, Tracker
+from .base import Detector, FaceAnalyzer, RelationReasoner, Tracker
+from .insightface import InsightFaceAnalyzer
 from .mock import (
     MockRelationReasoner,
     MockTarget,
@@ -21,6 +22,7 @@ from .relate_anything import (
     RelationStats,
     RelSggBackend,
 )
+from .short_tracker import ShortTermTracker
 from .yolo_world import (
     DetectionMetrics,
     DetectionStats,
@@ -36,6 +38,8 @@ __all__ = [
     "DetectionMetrics",
     "DetectionStats",
     "Detector",
+    "FaceAnalyzer",
+    "InsightFaceAnalyzer",
     "MockRelationReasoner",
     "MockTarget",
     "MockTracker",
@@ -51,6 +55,7 @@ __all__ = [
     "RelationStats",
     "ScriptedDetector",
     "StaticSceneDetector",
+    "ShortTermTracker",
     "Tracker",
     "UltralyticsYoloWorldBackend",
     "YoloWorldBackend",
