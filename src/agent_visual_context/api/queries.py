@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 
 from ..context import SceneSummarizer, WindowSnapshotBuilder
 from ..domain import Event, Observation, Snapshot, utc_now
+from ..perception.person_identity import InMemoryIdentityStore
 from ..runtime.bus import EventBus, EventListener
 from ..runtime.live import LiveRuntime
 from ..runtime.metrics import MetricsSnapshot
@@ -46,6 +47,7 @@ class VisualContextApi:
         bus: EventBus,
         clock: Callable[[], datetime] = utc_now,
         live: LiveRuntime | None = None,
+        identity_store: InMemoryIdentityStore | None = None,
     ) -> None:
         self._scene_id = scene_id
         self._timeline = timeline
@@ -53,6 +55,7 @@ class VisualContextApi:
         self._bus = bus
         self._clock = clock
         self._live = live
+        self._identity_store = identity_store
         self._window = WindowSnapshotBuilder(clock=clock)
 
     @classmethod
@@ -64,6 +67,7 @@ class VisualContextApi:
             summarizer=pipeline.summarizer,
             bus=pipeline.bus,
             clock=pipeline.clock,
+            identity_store=pipeline.identity_store,
         )
 
     @classmethod
@@ -77,7 +81,49 @@ class VisualContextApi:
             bus=pipeline.bus,
             clock=pipeline.clock,
             live=runtime,
+            identity_store=pipeline.identity_store,
         )
+
+    def register_anonymous_person(
+        self,
+        embedding: list[float] | tuple[float, ...],
+        *,
+        model_version: str,
+        consent: bool = False,
+        person_id: str | None = None,
+    ) -> str:
+        """登记匿名特征；向量不会进入快照、日志或事件载荷。"""
+        if self._identity_store is None:
+            raise RuntimeError("匿名人物匹配未配置")
+        return self._identity_store.register(
+            embedding,
+            model_version=model_version,
+            now=self._clock(),
+            consent=consent,
+            person_id=person_id,
+        )
+
+    def add_anonymous_person_sample(
+        self,
+        person_id: str,
+        embedding: list[float] | tuple[float, ...],
+        *,
+        model_version: str,
+        consent: bool = False,
+    ) -> None:
+        if self._identity_store is None:
+            raise RuntimeError("匿名人物匹配未配置")
+        self._identity_store.add_sample(
+            person_id,
+            embedding,
+            model_version=model_version,
+            now=self._clock(),
+            consent=consent,
+        )
+
+    def delete_anonymous_person(self, person_id: str) -> None:
+        if self._identity_store is not None:
+            self._identity_store.delete(person_id)
 
     def get_health(self) -> PipelineStatus | None:
         """返回实时链路的健康状态（组件级 + 整体）；无实时运行时时返回 `None`。

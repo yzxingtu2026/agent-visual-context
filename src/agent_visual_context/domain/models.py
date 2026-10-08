@@ -201,6 +201,32 @@ class FaceObservation(BaseModel):
     gender_confidence: float | None = Field(default=None, ge=0, le=1)
 
 
+class IdentityMatchStatus(StrEnum):
+    """匿名人物匹配状态；不代表真实姓名、账户或业务身份。"""
+
+    UNKNOWN = "unknown"
+    CANDIDATE = "candidate"
+    MATCHED = "matched"
+
+
+class PersonIdentityMatch(BaseModel):
+    """快照中可暴露的最小匿名人物匹配结果。"""
+
+    model_config = ConfigDict(frozen=True)
+
+    track_id: str
+    person_id: str | None = None
+    status: IdentityMatchStatus
+    score: float | None = Field(default=None, ge=0, le=1)
+    model_version: str
+    source_id: str
+    observed_at: datetime
+    expires_at: datetime
+
+    def is_expired(self, now: datetime) -> bool:
+        return now >= self.expires_at
+
+
 class PersonSceneSummary(BaseModel):
     """单帧人体检测摘要；跨帧身份统计在可靠跟踪接入前保持未知。"""
 
@@ -213,6 +239,7 @@ class PersonSceneSummary(BaseModel):
     current_person_count: int | None = Field(ge=0)
     recognizable_face_count: int | None = Field(default=None, ge=0)
     face_estimates: tuple[FaceEstimate, ...] = ()
+    identity_matches: tuple[PersonIdentityMatch, ...] = ()
     window_distinct_person_count: int | None = Field(default=None, ge=0)
     confidence: float | None = Field(default=None, ge=0, le=1)
     quality: PersonCountQuality

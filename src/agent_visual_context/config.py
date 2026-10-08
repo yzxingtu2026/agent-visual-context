@@ -65,6 +65,14 @@ class AppConfig(BaseSettings):
     face_timeout_seconds: float = Field(default=2.0, gt=0)
     face_min_quality: float = Field(default=0.5, ge=0, le=1)
 
+    # 匿名人物身份匹配；默认关闭，启用前必须由宿主显式登记并授权特征。
+    identity_matching_enabled: bool = False
+    identity_match_threshold: float = Field(default=0.72, ge=0, le=1)
+    identity_candidate_threshold: float = Field(default=0.55, ge=0, le=1)
+    identity_ambiguity_margin: float = Field(default=0.05, ge=0, le=1)
+    identity_confirmation_frames: int = Field(default=2, ge=1)
+    identity_retention_seconds: float = Field(default=86_400.0, gt=0)
+
     # 关系推理器（PoC-4：RelateAnything 适配器）
     # backend=mock 时使用 MockRelationReasoner；backend=relate-anything 时装配真实适配器。
     reasoner_backend: str = "mock"
