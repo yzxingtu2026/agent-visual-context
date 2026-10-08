@@ -185,13 +185,15 @@ cli / api  ->  runtime  ->  context / policies / temporal  ->  perception / inpu
 授权匹配使用，序列化时排除；时间线、Agent 文本快照和普通日志仅保留计数与可选估计。
 人脸组件失败只标记自己的健康状态，人体检测计数与关系推理继续运行。
 
-### 匿名人物匹配（Issue #18）
+### 匿名人物匹配（Issue #18、#22）
 
-`perception/person_identity.py::InMemoryIdentityStore` 是匿名特征库的唯一进程内实现与边界。
-它默认关闭，登记和多样本更新都必须显式授权；特征按人脸模型版本隔离，并提供分数阈值、
-歧义拒绝、多帧确认、同帧轨迹冲突拒绝、过期和删除。`PersonIdentityMatch` 只进入单帧人物
-摘要和快照，向量不进入领域序列化结果、时间线、日志或 Agent 文本。下游只能通过
-`VisualContextApi` 登记、更新和删除匿名记录，不得把 `person_id` 解释为真实账户或业务权限。
+`perception/person_identity.py` 定义 `IdentityStore`（受控登记、生命周期及按模型版本检索）
+和 `IdentityMatcher`（单帧最小匹配结果）协议。默认 `StoredIdentityMatcher` 统一负责质量、
+阈值、歧义、多帧和同帧冲突规则；`InMemoryIdentityStore` 默认关闭，仅用于本地验证。
+生产使用方通过 `runtime/factory.py` 注入自己的持久化 store 或 matcher，不在本项目
+保存用户账户与业务绑定。`PersonIdentityMatch` 只进入单帧人物摘要和快照，向量不得进入
+公开 `FrameResult`、领域序列化结果、时间线、日志或 Agent 文本。`VisualContextApi` 的
+登记、更新、删除和禁用操作委托给 store；不得把 `person_id` 解释为真实账户或业务权限。
 
 三类信息必须分型，视觉观察不得伪装成用户意图或业务事实：
 

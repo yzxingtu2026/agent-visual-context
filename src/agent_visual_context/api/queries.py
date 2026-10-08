@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 
 from ..context import SceneSummarizer, WindowSnapshotBuilder
 from ..domain import Event, Observation, Snapshot, utc_now
-from ..perception.person_identity import InMemoryIdentityStore
+from ..perception.person_identity import IdentityMatcher, IdentityStore, StoredIdentityMatcher
 from ..runtime.bus import EventBus, EventListener
 from ..runtime.live import LiveRuntime
 from ..runtime.metrics import MetricsSnapshot
@@ -47,7 +47,8 @@ class VisualContextApi:
         bus: EventBus,
         clock: Callable[[], datetime] = utc_now,
         live: LiveRuntime | None = None,
-        identity_store: InMemoryIdentityStore | None = None,
+        identity_store: IdentityStore | None = None,
+        identity_matcher: IdentityMatcher | None = None,
     ) -> None:
         self._scene_id = scene_id
         self._timeline = timeline
@@ -56,6 +57,7 @@ class VisualContextApi:
         self._clock = clock
         self._live = live
         self._identity_store = identity_store
+        self._identity_matcher = identity_matcher
         self._window = WindowSnapshotBuilder(clock=clock)
 
     @classmethod
@@ -68,6 +70,7 @@ class VisualContextApi:
             bus=pipeline.bus,
             clock=pipeline.clock,
             identity_store=pipeline.identity_store,
+            identity_matcher=pipeline.identity_matcher,
         )
 
     @classmethod
@@ -82,6 +85,7 @@ class VisualContextApi:
             clock=pipeline.clock,
             live=runtime,
             identity_store=pipeline.identity_store,
+            identity_matcher=pipeline.identity_matcher,
         )
 
     def register_anonymous_person(
@@ -124,6 +128,14 @@ class VisualContextApi:
     def delete_anonymous_person(self, person_id: str) -> None:
         if self._identity_store is not None:
             self._identity_store.delete(person_id)
+        if isinstance(self._identity_matcher, StoredIdentityMatcher):
+            self._identity_matcher.forget_person(person_id)
+
+    def disable_anonymous_person(self, person_id: str) -> None:
+        if self._identity_store is not None:
+            self._identity_store.disable(person_id)
+        if isinstance(self._identity_matcher, StoredIdentityMatcher):
+            self._identity_matcher.forget_person(person_id)
 
     def get_health(self) -> PipelineStatus | None:
         """返回实时链路的健康状态（组件级 + 整体）；无实时运行时时返回 `None`。

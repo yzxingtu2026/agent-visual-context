@@ -14,8 +14,12 @@ from .mock import (
 )
 from .person_identity import (
     IdentityAuthorizationError,
+    IdentityCandidate,
+    IdentityMatcher,
+    IdentityStore,
     IdentityStoreDisabled,
     InMemoryIdentityStore,
+    StoredIdentityMatcher,
 )
 from .relate_anything import (
     DEFAULT_VOCABULARY,
@@ -46,8 +50,12 @@ __all__ = [
     "FaceAnalyzer",
     "InsightFaceAnalyzer",
     "IdentityAuthorizationError",
+    "IdentityCandidate",
+    "IdentityMatcher",
+    "IdentityStore",
     "IdentityStoreDisabled",
     "InMemoryIdentityStore",
+    "StoredIdentityMatcher",
     "MockRelationReasoner",
     "MockTarget",
     "MockTracker",
