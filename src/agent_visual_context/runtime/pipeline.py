@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from time import monotonic
@@ -38,7 +38,7 @@ from ..input.base import FrameSource
 from ..logging_setup import get_logger
 from ..perception.base import Detector, FaceAnalyzer, RelationReasoner, Tracker
 from ..perception.face_association import associate_faces
-from ..perception.person_identity import InMemoryIdentityStore
+from ..perception.person_identity import IdentityMatcher, IdentityStore, StoredIdentityMatcher
 from ..policies.base import Policy
 from ..temporal import BoundedTimeline, PersistenceGate
 from .bus import EventBus
@@ -95,7 +95,8 @@ class Pipeline:
         detector: Detector,
         tracker: Tracker,
         face_analyzer: FaceAnalyzer | None = None,
-        identity_store: InMemoryIdentityStore | None = None,
+        identity_store: IdentityStore | None = None,
+        identity_matcher: IdentityMatcher | None = None,
         reasoner: RelationReasoner,
         timeline: BoundedTimeline | None = None,
         gate: PersistenceGate | None = None,
@@ -110,6 +111,7 @@ class Pipeline:
         self._tracker = tracker
         self._face_analyzer = face_analyzer
         self._identity_store = identity_store
+        self._identity_matcher = identity_matcher
         self._reasoner = reasoner
         self._clock = clock
         self.timeline = (
@@ -152,8 +154,12 @@ class Pipeline:
         return self._source
 
     @property
-    def identity_store(self) -> InMemoryIdentityStore | None:
+    def identity_store(self) -> IdentityStore | None:
         return self._identity_store
+
+    @property
+    def identity_matcher(self) -> IdentityMatcher | None:
+        return self._identity_matcher
 
     @property
     def clock(self) -> Callable[[], datetime]:
@@ -248,14 +254,24 @@ class Pipeline:
             else:
                 degraded.append("face_analyzer")
         identity_matches: tuple[PersonIdentityMatch, ...] = ()
-        if self._identity_store is not None and face_ok:
-            identity_matches = self._identity_store.match_faces(
-                faces,
-                source_id=frame.source_id,
-                observed_at=moment,
-                ttl_seconds=self._config.observation_ttl_seconds,
+        identity_matcher = self._identity_matcher
+        if identity_matcher is not None and face_ok:
+            matches, match_ok = self._call(
+                "identity_matcher",
+                lambda: identity_matcher.match_faces(
+                    faces, source_id=frame.source_id, observed_at=moment,
+                    ttl_seconds=self._config.observation_ttl_seconds,
+                ),
+                now=moment,
             )
-        result.face_items = tuple(faces)
+            identity_matches = tuple(matches)
+            if not match_ok:
+                degraded.append("identity_matcher")
+            else:
+                self.status.mark_ok("identity_matcher", now=moment)
+        elif isinstance(identity_matcher, StoredIdentityMatcher):
+            identity_matcher.reset()
+        result.face_items = tuple(face.model_copy(update={"embedding": None}) for face in faces)
         result.identity_items = identity_matches
         result.persons = self.timeline.add_person_summary(
             PersonSceneSummary(
@@ -362,7 +378,7 @@ class Pipeline:
     def _call(
         self,
         component: str,
-        action: Callable[[], list[_T]],
+        action: Callable[[], Iterable[_T]],
         *,
         now: datetime,
     ) -> tuple[list[_T], bool]:
@@ -370,12 +386,15 @@ class Pipeline:
         try:
             return list(action()), True
         except Exception as exc:
+            error = "身份匹配调用失败" if component == "identity_matcher" else str(exc)
             self.status.mark_failure(
-                component, error=str(exc), now=now, fatal=self._config.fail_fast
+                component, error=error, now=now, fatal=self._config.fail_fast
             )
-            logger.warning("组件 %s 调用失败，已降级：%s", component, exc)
+            logger.warning("组件 %s 调用失败，已降级：%s", component, error)
             if self._config.fail_fast:
-                raise PerceptionError(f"组件 {component} 调用失败：{exc}") from exc
+                if component == "identity_matcher":
+                    raise PerceptionError(f"组件 {component} 调用失败：{error}") from None
+                raise PerceptionError(f"组件 {component} 调用失败：{error}") from exc
             return [], False
 
     def _register_components(self) -> None:
@@ -386,6 +405,10 @@ class Pipeline:
             self.status.register("face_analyzer", model_version=self._face_analyzer.model_version)
         else:
             self.status.disable("face_analyzer")
+        if self._identity_matcher is not None:
+            self.status.register("identity_matcher")
+        else:
+            self.status.disable("identity_matcher")
         self.status.register("reasoner", model_version=self._reasoner.model_version)
         if not self.policies:
             self.status.disable("policies")

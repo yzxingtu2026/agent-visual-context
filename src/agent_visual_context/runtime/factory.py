@@ -18,6 +18,8 @@ from ..input import ScriptedFrameSource, frame_source_from_path, synthetic_frame
 from ..input.base import FrameSource
 from ..input.camera import CameraBackend, CameraSource
 from ..perception import (
+    IdentityMatcher,
+    IdentityStore,
     InMemoryIdentityStore,
     InsightFaceAnalyzer,
     MockRelationReasoner,
@@ -27,6 +29,7 @@ from ..perception import (
     RelationRule,
     ShortTermTracker,
     StaticSceneDetector,
+    StoredIdentityMatcher,
     YoloWorldDetector,
 )
 from ..perception.base import Detector, FaceAnalyzer, RelationReasoner, Tracker
@@ -106,7 +109,8 @@ def build_mock_pipeline(
     detector: Detector | None = None,
     tracker: Tracker | None = None,
     face_analyzer: FaceAnalyzer | None = None,
-    identity_store: InMemoryIdentityStore | None = None,
+    identity_store: IdentityStore | None = None,
+    identity_matcher: IdentityMatcher | None = None,
     reasoner: RelationReasoner | None = None,
     policies: Sequence[Policy] | None = None,
     bus: EventBus | None = None,
@@ -134,20 +138,30 @@ def build_mock_pipeline(
         source_id=config.source_id,
     )
 
+    resolved_store = identity_store
+    if resolved_store is None and identity_matcher is None:
+        resolved_store = InMemoryIdentityStore(
+            enabled=config.identity_matching_enabled,
+            retention_seconds=config.identity_retention_seconds,
+        )
+    resolved_matcher = identity_matcher
+    if resolved_matcher is None and resolved_store is not None:
+        resolved_matcher = StoredIdentityMatcher(
+            resolved_store,
+            match_threshold=config.identity_match_threshold,
+            candidate_threshold=config.identity_candidate_threshold,
+            ambiguity_margin=config.identity_ambiguity_margin,
+            confirmation_frames=config.identity_confirmation_frames,
+            min_quality=config.face_min_quality,
+        )
     return Pipeline(
         config=config,
         source=resolved_source,
         detector=detector or build_detector(config, targets=targets),
         tracker=tracker or build_tracker(config),
         face_analyzer=face_analyzer or build_face_analyzer(config),
-        identity_store=(identity_store or InMemoryIdentityStore(
-            enabled=config.identity_matching_enabled,
-            match_threshold=config.identity_match_threshold,
-            candidate_threshold=config.identity_candidate_threshold,
-            ambiguity_margin=config.identity_ambiguity_margin,
-            confirmation_frames=config.identity_confirmation_frames,
-            retention_seconds=config.identity_retention_seconds,
-        )),
+        identity_store=resolved_store,
+        identity_matcher=resolved_matcher,
         reasoner=reasoner or build_reasoner(config, relation_rules=relation_rules),
         timeline=BoundedTimeline(
             capacity=config.timeline_capacity,
@@ -184,7 +198,8 @@ def build_offline_pipeline(
     detector: Detector | None = None,
     tracker: Tracker | None = None,
     face_analyzer: FaceAnalyzer | None = None,
-    identity_store: InMemoryIdentityStore | None = None,
+    identity_store: IdentityStore | None = None,
+    identity_matcher: IdentityMatcher | None = None,
     reasoner: RelationReasoner | None = None,
     policies: Sequence[Policy] | None = None,
     bus: EventBus | None = None,
@@ -212,6 +227,7 @@ def build_offline_pipeline(
         tracker=tracker,
         face_analyzer=face_analyzer,
         identity_store=identity_store,
+        identity_matcher=identity_matcher,
         reasoner=reasoner,
         policies=policies,
         bus=bus,
@@ -260,7 +276,8 @@ def build_live_runtime(
     detector: Detector | None = None,
     tracker: Tracker | None = None,
     face_analyzer: FaceAnalyzer | None = None,
-    identity_store: InMemoryIdentityStore | None = None,
+    identity_store: IdentityStore | None = None,
+    identity_matcher: IdentityMatcher | None = None,
     reasoner: RelationReasoner | None = None,
     policies: Sequence[Policy] | None = None,
     bus: EventBus | None = None,
@@ -288,6 +305,7 @@ def build_live_runtime(
         tracker=tracker,
         face_analyzer=face_analyzer,
         identity_store=identity_store,
+        identity_matcher=identity_matcher,
         reasoner=reasoner or build_reasoner(resolved_config, relation_rules=relation_rules),
         policies=policies,
         bus=bus,
