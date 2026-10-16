@@ -48,6 +48,11 @@ face = [
     "onnxruntime>=1.18,<2",
     "opencv-python>=4.10,<5",
 ]
+# 本机浏览器 WebRTC 视频回传/推理示例；不进入默认依赖。
+webrtc = [
+    "aiohttp>=3.10,<4",
+    "aiortc>=1.10,<2",
+]
 
 [project.scripts]
 avc = "agent_visual_context.cli:main"

@@ -302,3 +302,27 @@ PoC-3 接入的 YOLO-World 适配器经 Ultralytics 运行时（AGPL-3.0，或�
 - [阿国饭店 Issue #446：引入 RelateAnything 实现主动迎宾唤醒与长期视觉辅助上下文](https://github.com/yzxingtu2026/aguo-ai-dining/issues/446)
 - [RelateAnything](https://github.com/Maelic/RelateAnything)
 - [agent-project-skeleton](https://github.com/yzxingtu2026/agent-project-skeleton)
+
+### 本机浏览器 WebRTC 视频 + 推理示例（Issue #24）
+
+浏览器摄像头发送连续视频，Python 服务端直接回传视频；独立路径以默认 2 FPS 采样现有视觉流水线，
+通过 DataChannel 返回结构化结果。**默认 Mock 检测/关系，固定演示框不代表模型真实识别效果**。
+只监听 `127.0.0.1`，单浏览器会话，不录制画面：
+
+```bash
+uv sync --extra webrtc
+uv run --extra webrtc python examples/webrtc_browser/server.py --port 8080 --fps 2
+# 在同一台机器的浏览器打开 http://localhost:8080 ，授权摄像头后点击“启动摄像头”
+```
+
+真实推理按需安装并启动（权重、GPU 配置与模型许可证须按 `docs/research/` 核对）：
+
+```bash
+uv sync --extra webrtc --extra yolo-world
+AVC_DETECTOR_DEVICE=0 uv run --extra webrtc --extra yolo-world \
+  python examples/webrtc_browser/server.py --detector yolo-world
+# 关系推理可另装 --extra relate-anything，并加 --reasoner relate-anything
+```
+
+具体指标口径、浏览器手测步骤及后续跨机部署边界见
+[WebRTC 示例说明](docs/development/webrtc-browser.md)。
