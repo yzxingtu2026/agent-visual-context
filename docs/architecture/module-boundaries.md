@@ -257,3 +257,13 @@ cli / api  ->  runtime  ->  context / policies / temporal  ->  perception / inpu
 - **装配**：组件接线统一放在 `runtime/factory.py`，CLI、示例与测试都通过工厂构造流水线；
   需要替换组件时用参数注入，不要在业务代码中直接实例化具体实现。
 - **时间**：领域层通过 `utc_now()` 取时间，流水线与时间线支持注入 `clock`，测试必须使用 `FakeClock`。
+
+### WebRTC 单机浏览器接入（Issue #24）
+
+- WebRTC/HTTP/编解码只在 `examples/webrtc_browser/` 作为**可选传输适配层**使用；
+  `domain` 与 `Pipeline` 不引入 WebRTC 依赖。远端视频采样变成 `Frame` 后，仍复用
+  `build_mock_pipeline(config, source=PushFrameSource(...))`，后端由原有配置装配。
+- `runtime/remote.py` 中 `PushFrameSource` 实现既有输入协议；`RemoteInference`
+  复用 `LatestFrameBuffer(maxsize=1)`，推理线程与视频回传事件循环隔离。
+  每连接独立装配流水线与时间线，不共享短时跟踪状态。具体部署与测量口径见
+  `docs/development/webrtc-browser.md`。
